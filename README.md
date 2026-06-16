@@ -301,7 +301,7 @@ sadaf/
 │   ├── 06_uncertainty.py            # Bayesian posterior + ProtoNet
 │   ├── 07_explainability.py         # Multi-method attribution (H5)
 │   ├── 08_domain_adaptation.py      # Domain shift + transfer (H6)
-│   ├── 09_robustness.py             # Weakness補完: LOGO-CV, reg grid, DM correction
+│   ├── 09_robustness.py             # Weakness Supplement: LOGO-CV, reg grid, DM correction
 │   └── 10_figures.py                # Generate all paper figures
 │
 ├── figures/                         # All output figures (auto-generated)
