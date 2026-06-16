@@ -255,6 +255,7 @@ sadaf/
 │
 ├── README.md                        # This file
 ├── requirements.txt                 # Python dependencies
+├── LICENSE
 ├── .gitignore
 │
 ├── sadaf/                           # Main package
