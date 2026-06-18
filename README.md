@@ -627,7 +627,7 @@ Posterior mean ± 95% credible interval for 80 test ad groups (sorted by predict
 
 ---
 
-### Robustness & Weakness補完 Figures (W-series)
+### Robustness & Weakness Supplement Figures (W-series)
 
 #### Figure W1a — Augmentation Quality Stratification
 `figures/fig_W1a_aug_quality.png`
