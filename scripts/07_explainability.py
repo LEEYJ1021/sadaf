@@ -83,17 +83,15 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Load & preprocess ───────────────────────────────────────────
+    # NOTE: load_and_preprocess() already calls _print_summary() internally
+    # (see loader.py), printing the dataset summary using df["has_conversion"]
+    # (whole-dataset rate, 11.77%). The previous version of this script
+    # printed a second, incorrect summary here using df_paid["has_conversion"]
+    # (paid-subset rate, 27.92%), which produced two different-looking
+    # "Dataset summary" blocks with different Conversion % values in the
+    # same run. Removed — loader.py's own summary is the single source of
+    # truth and is already printed by the call below.
     df, df_paid, df_roas = load_and_preprocess(args.data_path)
-
-    print("── Dataset summary ──────────────────────────────────────")
-    print(f"  Total rows    : {len(df):>8,}")
-    print(f"  Paid rows     : {len(df_paid):>8,}")
-    n_roas_pos = (df_paid['ROAS'] > 0).sum()
-    print(f"  ROAS > 0      : {n_roas_pos:>8,}  "
-          f"({n_roas_pos / len(df_paid) * 100:.1f}% of paid)")
-    print(f"  Conversion %  : {df_paid['has_conversion'].mean()*100:.2f}%")
-    print(f"  Zero-ROAS %   : {(df_paid['ROAS'] == 0).mean()*100:.1f}%")
-    print("─────────────────────────────────────────────────────────")
 
     # ── [FIX-2] group-aware sequence split ─────────────────────────
     X, Y, group_ids = build_sequences(
@@ -121,9 +119,16 @@ def main():
         batch_size=32)
 
     model = BayesianLSTM(input_dim=len(FEATURES), hidden=128, dropout=0.4)
+    # NOTE: trainer.py's train_model() signature is
+    #   train_model(model, train_loader, val_loader, epochs=TRAIN_EPOCHS,
+    #               lr=TRAIN_LR, patience=TRAIN_PATIENCE, task="reg",
+    #               weight_decay=TRAIN_WD, verbose=True,
+    #               real_val_loader=None)
+    # There is no `max_epochs` kwarg — that was an incorrect guess in the
+    # previous version of this script and caused a TypeError at runtime.
     model, history = train_model(
         model, tr_l, va_l, real_val_loader=real_va_l,
-        max_epochs=60, patience=12)
+        epochs=60, patience=12)
 
     print("\n══ H5: Multi-Method Attribution Comparison [FIXED v3] ══")
 
