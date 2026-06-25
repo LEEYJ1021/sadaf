@@ -24,7 +24,11 @@ PATCH (2025-06):
       from sadaf.training.trainer import train_model, eval_reg, SeqDataset
     SeqDataset is correctly imported from sadaf.data.sequence (line 44).
     trainer only exports train_model + eval_reg.
-  - FIXED ref_lstm= → ref_model= in augment_pipeline() call (line ~147).
+  - FIXED ref_lstm= → ref_model= in augment_pipeline() call.
+  - FIXED build_sequences() argument order:
+      (df, target, FEATURES, seq_len=4)  →  (df, target, seq_len=4, features=FEATURES)
+    FEATURES was occupying the seq_len positional slot, causing
+    "multiple values for argument 'seq_len'".
 
 Usage:
     python scripts/07_explainability.py --data_path data/3월성과데이터(샘플).xlsx
@@ -100,7 +104,7 @@ def plot_figure9(
     gini_by_cluster: dict,
     features: list,
     cluster_names: list,
-    sig_labels: dict,           # {feature_name: label_str}  e.g. {"CTR": "*", ...}
+    sig_labels: dict,
     out_path: str = "figures/fig_09_gsshap_importance_fixed.png",
 ):
     """
@@ -124,7 +128,7 @@ def plot_figure9(
     offsets = [-width, 0, width]
 
     for ci, cname in enumerate(cluster_names):
-        data_mat = feat_imp_gs.get(ci, np.zeros((1, n_feat)))  # (n_samples, D)
+        data_mat = feat_imp_gs.get(ci, np.zeros((1, n_feat)))
         for fi in range(n_feat):
             col_data = data_mat[:, fi]
             ax.boxplot(
@@ -141,7 +145,6 @@ def plot_figure9(
                 showfliers=True,
             )
 
-    # significance annotations
     for fi, feat in enumerate(features):
         label = sig_labels.get(feat, "ns")
         y_top = max(
@@ -157,7 +160,6 @@ def plot_figure9(
     ax.set_ylabel("Mean |Attribution| (GS-SHAP)")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
 
-    # legend
     from matplotlib.patches import Patch
     legend_els = [Patch(facecolor=colors[i], alpha=0.7, label=cluster_names[i])
                   for i in range(len(cluster_names))]
@@ -168,7 +170,7 @@ def plot_figure9(
     ax2.set_title("Temporal attribution concentration  [FIXED]")
 
     for ci, cname in enumerate(cluster_names):
-        gini_mat = gini_by_cluster.get(ci, np.zeros((1, n_feat)))  # (n, D)
+        gini_mat = gini_by_cluster.get(ci, np.zeros((1, n_feat)))
         for fi in range(n_feat):
             col_data = gini_mat[:, fi]
             ax2.boxplot(
@@ -214,8 +216,9 @@ def main():
     df, df_paid, df_roas = load_and_preprocess(args.data_path)
 
     # [FIX-2] unpack group_ids
+    # PATCH: keyword argument order fixed — features= must come after seq_len=
     X_reg, Y_reg, gids_reg = build_sequences(
-        df_roas, "log_ROAS", FEATURES, seq_len=4)
+        df_roas, "log_ROAS", seq_len=4, features=FEATURES)
 
     # [FIX-2] group-aware split
     (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = group_time_split(
@@ -269,8 +272,8 @@ def main():
     print("\n  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3] ...")
     explainer = load_gsshap_explainer(explain_model, X_aug_n)
 
-    feat_imp_gs          = {c: [] for c in range(3)}   # list of (D,) arrays
-    cell_maps_by_cluster = {c: [] for c in range(3)}   # list of (T,D) arrays
+    feat_imp_gs          = {c: [] for c in range(3)}
+    cell_maps_by_cluster = {c: [] for c in range(3)}
 
     for c in range(3):
         cand      = np.where(te_labels == c)[0]
@@ -281,8 +284,8 @@ def main():
                 # [FIX-3] use explain_with_gini()
                 _, _, cm, gini = explainer.explain_with_gini(
                     X_te_n[idx], seed=c * 100 + i)
-                feat_imp_gs[c].append(np.abs(cm).mean(axis=0))   # (D,)
-                cell_maps_by_cluster[c].append(cm)                # (T,D)
+                feat_imp_gs[c].append(np.abs(cm).mean(axis=0))
+                cell_maps_by_cluster[c].append(cm)
             except Exception as e:
                 print(f"    ⚠ GS-SHAP skipped idx={idx}: {e}")
 
@@ -298,7 +301,7 @@ def main():
     # ── Gini summary ───────────────────────────────────────────────────────
     print("\n  ── Temporal Gini by cluster (mean ± std) ──────────────")
     for c in range(3):
-        gmat = gini_by_cluster[c]   # (n_samples, D)
+        gmat = gini_by_cluster[c]
         row  = "  ".join(
             f"{FEATURES[d]}={gmat[:,d].mean():.3f}±{gmat[:,d].std():.3f}"
             for d in range(D_IN)
