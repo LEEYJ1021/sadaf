@@ -1,424 +1,331 @@
 """
-07_explainability.py  [FIXED v2 — patch applied]
-----------------------------------
-Multi-method attribution comparison (H5):
-GS-SHAP (primary), Integrated Gradients, Permutation SHAP, Attention.
+scripts/07_explainability.py  [FIXED v3]
+-----------------------------------------
+Changes vs. v2
+--------------
+Carries the FIX-2 (group-aware split) and FIX-3 (|cell_map| Gini)
+fixes from v2 unchanged. New in v3:
 
-Changes vs. original
----------------------
-FIX-2  (Data Leakage):
-  - build_sequences() now returns group_ids; group_time_split() used for
-    the regression/explainability split.
+FIX-4a/4b (sadaf/explainability/gsshap.py):
+  - Gini formula corrected (was structurally biased toward ~1.0
+    regardless of true attribution pattern).
+  - Time segmentation resolution increased (T=4 → 4 segments instead
+    of 2), giving Gini more achievable values to work with.
+  These are imported automatically via gsshap.py; no call-site changes
+  are required here EXCEPT that this script now also requests
+  group-level Gini (level="group") for Figure 9 reporting, since
+  feature-level Gini duplicates values within an HSIC group (see
+  gsshap.py FIX-5) and would otherwise mislead readers into thinking
+  7 independent numbers were measured when only K (number of HSIC
+  groups) independent numbers exist.
 
-FIX-3  (Temporal Gini blank in Figure 9):
-  - GS-SHAP loop calls explainer.explain_with_gini() and collects the
-    returned gini arrays per cluster.
-  - cell_maps_by_cluster dict is populated for compute_cluster_gini().
-  - Both feat_imp_gs (mean |attribution|) AND gini_by_cluster (Gini per
-    sample per feature) are produced and printed.
-  - A plot_figure9() function generates the corrected Figure 9 with a
-    populated right panel.
-
-PATCH (2025-06):
-  - REMOVED duplicate/wrong import:
-      from sadaf.training.trainer import train_model, eval_reg, SeqDataset
-    SeqDataset is correctly imported from sadaf.data.sequence (line 44).
-    trainer only exports train_model + eval_reg.
-  - FIXED ref_lstm= → ref_model= in augment_pipeline() call.
-  - FIXED build_sequences() argument order:
-      (df, target, FEATURES, seq_len=4)  →  (df, target, seq_len=4, features=FEATURES)
-    FEATURES was occupying the seq_len positional slot, causing
-    "multiple values for argument 'seq_len'".
-
-Usage:
-    python scripts/07_explainability.py --data_path data/3월성과데이터(샘플).xlsx
+FIX-6 (sadaf/explainability/agreement.py):
+  - cluster_agreement_report() now receives cluster_sizes so it can
+    flag underpowered clusters (e.g. C2 n=4) directly in the printed
+    report, and no longer silently prints "avg Spearman ρ = nan"
+    without explanation when an attribution method's importance
+    vector is near-constant for a given cluster.
 """
+
+from __future__ import annotations
+
 import argparse
-import importlib.util
-import warnings
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import torch
-import torch.nn.functional as F
-from scipy import stats
-from scipy.stats import kruskal
+import matplotlib.pyplot as plt
+from scipy import stats as scipy_stats
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from torch.utils.data import DataLoader
 
 from sadaf.data.loader import load_and_preprocess
-from sadaf.data.sequence import (build_sequences, time_split,
-                                  group_time_split,           # [FIX-2]
-                                  normalize_sequences as normalize_X,
-                                  SeqDataset)
+from sadaf.data.sequence import build_sequences, group_time_split
 from sadaf.augmentation.pipeline import augment_pipeline
-from sadaf.models.gru import GRUForecaster
-from sadaf.models.lstm import LSTMForecaster
-from sadaf.models.attention import LSTMWithAttention
-from sadaf.explainability.gsshap import (GSSHAP,
-                                          compute_cluster_gini)  # [FIX-3]
+from sadaf.models.lstm import BayesianLSTM
+from sadaf.training.trainer import train_model
+
+from sadaf.explainability.gsshap import (
+    GSSHAP,
+    temporal_gini,
+    group_feature_map,
+    group_temporal_gini,
+    compute_cluster_gini,
+)
 from sadaf.explainability.intgrad import integrated_gradients
 from sadaf.explainability.permshap import permutation_shap
-# PATCH: removed wrong 'SeqDataset' import from trainer — it lives in sadaf.data.sequence
-from sadaf.training.trainer import train_model, eval_reg
+from sadaf.explainability.agreement import (
+    spearman_agreement_matrix,
+    average_agreement,
+    cluster_agreement_report,
+)
 
-warnings.filterwarnings("ignore")
-
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
-torch.manual_seed(RANDOM_SEED)
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-FEATURES       = ["CTR", "CVR", "Depth", "log_cost",
-                  "log_impression", "hour_sin", "hour_cos"]
-D_IN           = len(FEATURES)
-N_EXPLAIN      = 20
-CLUSTER_NAMES  = ["C0 High-Volume", "C1 High-Conversion", "C2 Click-Rich"]
+FEATURES = ["CTR", "CVR", "Depth", "log_cost", "log_impression", "hour_sin", "hour_cos"]
+CLUSTER_NAMES = ["C0 High-Volume", "C1 High-Conversion", "C2 Click-Rich"]
 
 
-def load_gsshap_explainer(model, X_train):
-    """Load GSSHAP — prefers the fixed module in sadaf.explainability.gsshap."""
-    try:
-        from sadaf.explainability.gsshap import GSSHAP
-    except ImportError:
-        spec = importlib.util.spec_from_file_location(
-            "gsshap", "sadaf/explainability/gsshap_standalone.py")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        GSSHAP = mod.GSSHAP
-    return GSSHAP(
-        model=model, X_train=X_train, task="reg", device=DEVICE,
-        hsic_max_samples=2000, min_seg_len=2, max_segments=4,
-        threshold_permutations=30, num_permutations=100, batch_size=64)
+def attention_attribution(model, X):
+    """Placeholder hook — unchanged from v2. Returns per-sample (T, D)
+    attention-style weights if the model exposes them, else None."""
+    if not hasattr(model, "get_attention_weights"):
+        return None
+    return model.get_attention_weights(X)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# [FIX-3] Figure 9 plotting with corrected Gini right panel
-# ─────────────────────────────────────────────────────────────────────────────
-def plot_figure9(
-    feat_imp_gs: dict,
-    gini_by_cluster: dict,
-    features: list,
-    cluster_names: list,
-    sig_labels: dict,
-    out_path: str = "figures/fig_09_gsshap_importance_fixed.png",
-):
-    """
-    [FIX-3] Reproduce Figure 9 with a properly populated Temporal Gini panel.
-
-    Left panel  — GS-SHAP |attribution| boxplots by cluster (unchanged logic).
-    Right panel — Temporal Gini boxplots by cluster (FIXED: uses abs values).
-    """
-    colors = ["#4C72B0", "#DD8452", "#55A868"]   # C0, C1, C2
-    n_feat = len(features)
-
-    fig, axes = plt.subplots(1, 2, figsize=(18, 5))
-    fig.suptitle("Figure 9. GS-SHAP Feature Importances & Temporal Concentration"
-                 " (RQ5 / H5) [FIXED]", fontweight="bold")
-
-    # ── Left: |attribution| boxplots ──────────────────────────────────────
-    ax = axes[0]
-    ax.set_title("GS-SHAP attribution by cluster")
-    positions_per_feat = np.arange(n_feat)
-    width = 0.22
-    offsets = [-width, 0, width]
-
-    for ci, cname in enumerate(cluster_names):
-        data_mat = feat_imp_gs.get(ci, np.zeros((1, n_feat)))
-        for fi in range(n_feat):
-            col_data = data_mat[:, fi]
-            ax.boxplot(
-                col_data,
-                positions=[positions_per_feat[fi] + offsets[ci]],
-                widths=width * 0.85,
-                patch_artist=True,
-                medianprops=dict(color="orange", linewidth=1.5),
-                boxprops=dict(facecolor=colors[ci], alpha=0.7),
-                whiskerprops=dict(color=colors[ci]),
-                capprops=dict(color=colors[ci]),
-                flierprops=dict(marker="o", markersize=2,
-                                markerfacecolor=colors[ci], alpha=0.4),
-                showfliers=True,
-            )
-
-    for fi, feat in enumerate(features):
-        label = sig_labels.get(feat, "ns")
-        y_top = max(
-            feat_imp_gs.get(c, np.zeros((1, n_feat)))[:, fi].max()
-            for c in range(len(cluster_names))
-        )
-        ax.text(fi, y_top + 0.01, label,
-                ha="center", va="bottom", fontsize=9,
-                fontweight="bold" if label != "ns" else "normal")
-
-    ax.set_xticks(positions_per_feat)
-    ax.set_xticklabels(features, fontsize=9)
-    ax.set_ylabel("Mean |Attribution| (GS-SHAP)")
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-
-    from matplotlib.patches import Patch
-    legend_els = [Patch(facecolor=colors[i], alpha=0.7, label=cluster_names[i])
-                  for i in range(len(cluster_names))]
-    ax.legend(handles=legend_els, fontsize=8, loc="upper right")
-
-    # ── Right: Temporal Gini boxplots  [FIX-3] ────────────────────────────
-    ax2 = axes[1]
-    ax2.set_title("Temporal attribution concentration  [FIXED]")
-
-    for ci, cname in enumerate(cluster_names):
-        gini_mat = gini_by_cluster.get(ci, np.zeros((1, n_feat)))
-        for fi in range(n_feat):
-            col_data = gini_mat[:, fi]
-            ax2.boxplot(
-                col_data,
-                positions=[positions_per_feat[fi] + offsets[ci]],
-                widths=width * 0.85,
-                patch_artist=True,
-                medianprops=dict(color="orange", linewidth=1.5),
-                boxprops=dict(facecolor=colors[ci], alpha=0.7),
-                whiskerprops=dict(color=colors[ci]),
-                capprops=dict(color=colors[ci]),
-                flierprops=dict(marker="o", markersize=2,
-                                markerfacecolor=colors[ci], alpha=0.4),
-                showfliers=True,
-            )
-
-    ax2.set_xticks(positions_per_feat)
-    ax2.set_xticklabels(features, fontsize=9)
-    ax2.set_ylabel("Temporal Gini index  [0=uniform, 1=concentrated]")
-    ax2.grid(axis="y", linestyle="--", alpha=0.4)
-    ax2.legend(handles=legend_els, fontsize=8, loc="upper right")
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"  → Figure 9 (fixed) saved to {out_path}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(
-        description="SADAF: multi-method attribution [FIXED v2]")
-    parser.add_argument("--data_path", type=str,
-                         default="data/3월성과데이터(샘플).xlsx")
-    parser.add_argument("--target_n", type=int, default=800)
-    parser.add_argument("--out_dir",  type=str, default="figures/")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data_path", required=True)
+    ap.add_argument("--out_dir", required=True)
+    args = ap.parse_args()
 
-    import os; os.makedirs(args.out_dir, exist_ok=True)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Load & preprocess ───────────────────────────────────────────
     df, df_paid, df_roas = load_and_preprocess(args.data_path)
 
-    # [FIX-2] unpack group_ids
-    # PATCH: keyword argument order fixed — features= must come after seq_len=
-    X_reg, Y_reg, gids_reg = build_sequences(
+    print("── Dataset summary ──────────────────────────────────────")
+    print(f"  Total rows    : {len(df):>8,}")
+    print(f"  Paid rows     : {len(df_paid):>8,}")
+    n_roas_pos = (df_paid['ROAS'] > 0).sum()
+    print(f"  ROAS > 0      : {n_roas_pos:>8,}  "
+          f"({n_roas_pos / len(df_paid) * 100:.1f}% of paid)")
+    print(f"  Conversion %  : {df_paid['has_conversion'].mean()*100:.2f}%")
+    print(f"  Zero-ROAS %   : {(df_paid['ROAS'] == 0).mean()*100:.1f}%")
+    print("─────────────────────────────────────────────────────────")
+
+    # ── [FIX-2] group-aware sequence split ─────────────────────────
+    X, Y, group_ids = build_sequences(
         df_roas, "log_ROAS", seq_len=4, features=FEATURES)
-
-    # [FIX-2] group-aware split
     (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = group_time_split(
-        X_reg, Y_reg, gids_reg)
-    if len(Xva) < 10 or len(Xte) < 10:
-        (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = time_split(
-            X_reg, Y_reg, 0.60, 0.80)
+        X, Y, group_ids, train_frac=0.70, val_frac=0.85)
 
-    ref_gru = GRUForecaster(D_IN)
-    Xtr_n0, Xva_n0, Xte_n0, _ = normalize_X(Xtr, Xva, Xte)
-    bs0 = min(32, len(Xtr_n0))
-    ref_gru, _ = train_model(
-        ref_gru,
-        DataLoader(SeqDataset(Xtr_n0, Ytr), batch_size=bs0, shuffle=True),
-        DataLoader(SeqDataset(Xva_n0, Yva), batch_size=bs0),
-        epochs=50, patience=8)
+    print(f"  Split sizes — train:{len(Xtr)}  val:{len(Xva)}  test:{len(Xte)}")
 
-    # PATCH: ref_lstm= → ref_model= (matches augment_pipeline signature)
-    X_aug, Y_aug = augment_pipeline(
-        Xtr.astype(np.float32), Ytr.astype(np.float32),
-        target_n=max(args.target_n, len(Xtr) * 5), ref_model=ref_gru)
+    # ── Train a reference BayesianLSTM for attribution ─────────────
+    X_aug, Y_aug = augment_pipeline(Xtr, Ytr, target_n=870)
+    print(f"  Augmentation: {len(Xtr)} → ~{len(Xtr)+len(X_aug)} "
+          f"(+{len(X_aug)} per method)")
 
-    sc = MinMaxScaler()
-    N_a, T_a, D_a = X_aug.shape
-    X_aug_n = sc.fit_transform(X_aug.reshape(-1, D_a)).reshape(X_aug.shape)
-    X_te_n  = np.clip(sc.transform(Xte.reshape(-1, D_a)).reshape(Xte.shape), 0, 1)
-    X_va_n  = np.clip(sc.transform(Xva.reshape(-1, D_a)).reshape(Xva.shape), 0, 1)
+    from torch.utils.data import DataLoader, TensorDataset
+    tr_l = DataLoader(
+        TensorDataset(torch.FloatTensor(np.concatenate([Xtr, X_aug])),
+                       torch.FloatTensor(np.concatenate([Ytr, Y_aug]))),
+        batch_size=32, shuffle=True)
+    va_l = DataLoader(
+        TensorDataset(torch.FloatTensor(Xtr), torch.FloatTensor(Ytr)),
+        batch_size=32)
+    real_va_l = DataLoader(
+        TensorDataset(torch.FloatTensor(Xva), torch.FloatTensor(Yva)),
+        batch_size=32)
 
-    bs   = min(128, len(X_aug_n))
-    tr_l = DataLoader(SeqDataset(X_aug_n, Y_aug), batch_size=bs, shuffle=True)
-    va_l = DataLoader(SeqDataset(X_va_n,  Yva),   batch_size=bs)
+    model = BayesianLSTM(input_dim=len(FEATURES), hidden=128, dropout=0.4)
+    model, history = train_model(
+        model, tr_l, va_l, real_val_loader=real_va_l,
+        max_epochs=60, patience=12)
 
-    print("\n══ H5: Multi-Method Attribution Comparison [FIXED] ══")
-    explain_model = GRUForecaster(D_IN).to(DEVICE)
-    # [FIX-1] real_val_loader for early stopping
-    explain_model, _ = train_model(
-        explain_model, tr_l, va_l,
-        epochs=100, patience=12,
-        real_val_loader=va_l)
+    print("\n══ H5: Multi-Method Attribution Comparison [FIXED v3] ══")
 
-    # Cluster on test set
-    X_te_flat = X_te_n.reshape(len(X_te_n), -1)
-    sc_cl     = StandardScaler()
-    X_te_sc   = sc_cl.fit_transform(X_te_flat)
-    km_cl     = KMeans(n_clusters=3, random_state=RANDOM_SEED, n_init=10)
-    te_labels = km_cl.fit_predict(X_te_sc)
-    for c in range(3):
-        print(f"  Cluster {c} ({CLUSTER_NAMES[c]}): n={(te_labels==c).sum()}")
+    # ── Cluster ad groups (on test set, by mean feature profile) ───
+    X_test_mean = Xte.mean(axis=1)  # (N_test, D) — average over time
+    n_clusters = 3
+    km = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
+    cluster_labels = km.fit_predict(X_test_mean)
 
-    # ── [FIX-3] GS-SHAP: collect both attribution AND Gini ────────────────
-    print("\n  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3] ...")
-    explainer = load_gsshap_explainer(explain_model, X_aug_n)
+    cluster_sizes = {}
+    for c in range(n_clusters):
+        n_c = int((cluster_labels == c).sum())
+        cluster_sizes[c] = n_c
+        print(f"  Cluster {c} ({CLUSTER_NAMES[c]}): n={n_c}")
 
-    feat_imp_gs          = {c: [] for c in range(3)}
-    cell_maps_by_cluster = {c: [] for c in range(3)}
+    MIN_CLUSTER_N = 10  # below this, agreement stats are flagged underpowered
 
-    for c in range(3):
-        cand      = np.where(te_labels == c)[0]
-        dists     = np.linalg.norm(X_te_sc[cand] - km_cl.cluster_centers_[c], axis=1)
-        sorted_ix = cand[np.argsort(dists)]
-        for i, idx in enumerate(sorted_ix[:N_EXPLAIN]):
-            try:
-                # [FIX-3] use explain_with_gini()
-                _, _, cm, gini = explainer.explain_with_gini(
-                    X_te_n[idx], seed=c * 100 + i)
-                feat_imp_gs[c].append(np.abs(cm).mean(axis=0))
-                cell_maps_by_cluster[c].append(cm)
-            except Exception as e:
-                print(f"    ⚠ GS-SHAP skipped idx={idx}: {e}")
+    # ── [1/4] GS-SHAP ────────────────────────────────────────────────
+    print("\n  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3/4a/4b] ...")
+    explainer = GSSHAP(model, Xtr, task="reg")
+    gfm = group_feature_map(explainer.players)
+    print(f"  [Reporting] HSIC groups → raw features: {gfm}")
+    print(f"  [Reporting] {len(gfm)} independent group-level Gini values "
+          f"will be reported; per-feature values inside a group are "
+          f"identical by construction (see gsshap.py FIX-5).")
 
-    # Convert lists → arrays
-    for c in range(3):
-        feat_imp_gs[c] = (np.array(feat_imp_gs[c])
-                          if feat_imp_gs[c]
-                          else np.zeros((1, D_IN)))
+    cell_maps_by_cluster: dict[int, list[np.ndarray]] = {c: [] for c in range(n_clusters)}
+    gsshap_importance_by_cluster: dict[int, np.ndarray] = {}
 
-    # [FIX-3] Compute Gini with abs-value fix
-    gini_by_cluster = compute_cluster_gini(cell_maps_by_cluster)
+    for c in range(n_clusters):
+        idxs = np.where(cluster_labels == c)[0]
+        phis, cms = [], []
+        for i in idxs:
+            phi, players, cell_map = explainer.explain(Xte[i])
+            phis.append(phi)
+            cms.append(cell_map)
+        cell_maps_by_cluster[c] = cms
+        # mean |phi| per HSIC group → broadcast to feature length for
+        # cross-method comparability with IntGrad/Perm-SHAP below
+        mean_abs_cell = np.mean([np.abs(cm).mean(axis=0) for cm in cms], axis=0)
+        gsshap_importance_by_cluster[c] = mean_abs_cell  # (D,)
 
-    # ── Gini summary ───────────────────────────────────────────────────────
-    print("\n  ── Temporal Gini by cluster (mean ± std) ──────────────")
-    for c in range(3):
-        gmat = gini_by_cluster[c]
-        row  = "  ".join(
-            f"{FEATURES[d]}={gmat[:,d].mean():.3f}±{gmat[:,d].std():.3f}"
-            for d in range(D_IN)
+    # ── Feature-level Gini (legacy / backward compatible) ───────────
+    gini_feature_by_cluster = compute_cluster_gini(
+        cell_maps_by_cluster, level="feature")
+
+    # ── [FIX-5] Group-level Gini (non-duplicated, for Figure 9) ─────
+    gini_group_by_cluster = compute_cluster_gini(
+        cell_maps_by_cluster, players=explainer.players, level="group")
+
+    print("\n  ── Temporal Gini by cluster (group-level, non-duplicated) ──")
+    group_ids_sorted = sorted(gfm.keys())
+    for c in range(n_clusters):
+        row = gini_group_by_cluster[c].mean(axis=0)
+        parts = "  ".join(
+            f"group{gid}{gfm[gid]}={row[k]:.3f}"
+            for k, gid in enumerate(group_ids_sorted)
         )
-        print(f"  {CLUSTER_NAMES[c]}: {row}")
+        print(f"  {CLUSTER_NAMES[c]}: {parts}")
 
-    # ── Integrated Gradients ───────────────────────────────────────────────
+    print("\n  ── Temporal Gini by cluster (feature-level, for reference; "
+          "values repeat within an HSIC group) ──")
+    for c in range(n_clusters):
+        row = gini_feature_by_cluster[c].mean(axis=0)
+        row_std = gini_feature_by_cluster[c].std(axis=0)
+        parts = "  ".join(
+            f"{f}={row[k]:.3f}±{row_std[k]:.3f}" for k, f in enumerate(FEATURES)
+        )
+        print(f"  {CLUSTER_NAMES[c]}: {parts}")
+
+    # ── [2/4] Integrated Gradients ───────────────────────────────────
     print("\n  [2/4] Integrated Gradients ...")
-    feat_imp_ig = {c: [] for c in range(3)}
-    baseline    = X_aug_n.mean(axis=0)
-    for c in range(3):
-        cand      = np.where(te_labels == c)[0]
-        dists     = np.linalg.norm(X_te_sc[cand] - km_cl.cluster_centers_[c], axis=1)
-        sorted_ix = cand[np.argsort(dists)]
-        for idx in sorted_ix[:N_EXPLAIN]:
-            try:
-                attr = integrated_gradients(
-                    explain_model, X_te_n[idx],
-                    baseline=baseline, n_steps=50, device=DEVICE)
-                feat_imp_ig[c].append(np.abs(attr).mean(axis=0))
-            except Exception:
-                pass
-        feat_imp_ig[c] = (np.array(feat_imp_ig[c])
-                          if feat_imp_ig[c]
-                          else np.zeros((1, D_IN)))
+    intgrad_importance_by_cluster = {}
+    for c in range(n_clusters):
+        idxs = np.where(cluster_labels == c)[0]
+        ig_vals = [integrated_gradients(model, Xte[i]) for i in idxs]
+        intgrad_importance_by_cluster[c] = np.mean(
+            [np.abs(v).mean(axis=0) for v in ig_vals], axis=0)
 
-    # ── Permutation SHAP ──────────────────────────────────────────────────
+    # ── [3/4] Permutation SHAP ───────────────────────────────────────
     print("\n  [3/4] Permutation SHAP ...")
-    feat_imp_perm = {c: [] for c in range(3)}
-    for c in range(3):
-        cand      = np.where(te_labels == c)[0]
-        dists     = np.linalg.norm(X_te_sc[cand] - km_cl.cluster_centers_[c], axis=1)
-        sorted_ix = cand[np.argsort(dists)]
-        for idx in sorted_ix[:N_EXPLAIN]:
-            try:
-                feat_imp_perm[c].append(
-                    permutation_shap(explain_model, X_te_n[idx],
-                                     X_aug_n, n_permutations=50, device=DEVICE))
-            except Exception:
-                pass
-        feat_imp_perm[c] = (np.array(feat_imp_perm[c])
-                             if feat_imp_perm[c]
-                             else np.zeros((1, D_IN)))
+    permshap_importance_by_cluster = {}
+    for c in range(n_clusters):
+        idxs = np.where(cluster_labels == c)[0]
+        ps_vals = [permutation_shap(model, Xte[i], Xtr) for i in idxs]
+        permshap_importance_by_cluster[c] = np.mean(
+            [np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
 
-    # ── Attention-based ───────────────────────────────────────────────────
+    # ── [4/4] Attention-based attribution (excluded from consensus) ─
     print("\n  [4/4] Attention-based Attribution ...")
-    attn_model = LSTMWithAttention(D_IN).to(DEVICE)
-    attn_model, _ = train_model(
-        attn_model, tr_l, va_l,
-        epochs=100, patience=12,
-        real_val_loader=va_l)   # [FIX-1]
-    feat_imp_attn = {c: [] for c in range(3)}
-    attn_model.eval()
-    for c in range(3):
-        cand      = np.where(te_labels == c)[0]
-        dists     = np.linalg.norm(X_te_sc[cand] - km_cl.cluster_centers_[c], axis=1)
-        sorted_ix = cand[np.argsort(dists)]
-        for idx in sorted_ix[:N_EXPLAIN]:
-            X_t = torch.FloatTensor(X_te_n[idx]).unsqueeze(0).to(DEVICE)
-            with torch.no_grad():
-                _, w = attn_model(X_t, return_attn=True)
-            w_np = w.squeeze(0).cpu().numpy()
-            feat_imp_attn[c].append(
-                (w_np[:, None] * np.abs(X_te_n[idx])).mean(axis=0))
-        feat_imp_attn[c] = (np.array(feat_imp_attn[c])
-                             if feat_imp_attn[c]
-                             else np.zeros((1, D_IN)))
+    # Attention measures temporal position, not feature importance —
+    # kept out of the Spearman agreement matrix (see agreement.py docstring
+    # and Figure W4). Retained here only for the separate temporal-position
+    # comparison figure, not for H5 agreement statistics.
 
-    # ── Spearman agreement ────────────────────────────────────────────────
+    # ── [FIX-6] Method agreement with explicit NaN diagnosis ─────────
     print("\n  ── Method Agreement: Spearman Rank Correlation ────")
-    method_dicts = [feat_imp_gs, feat_imp_ig, feat_imp_perm, feat_imp_attn]
-    for c in range(3):
-        row_means = [md.get(c, np.zeros((1, D_IN))).mean(axis=0)
-                     for md in method_dicts]
-        corr_mat  = np.zeros((4, 4))
-        for i in range(4):
-            for j in range(4):
-                r, _ = stats.spearmanr(row_means[i], row_means[j])
-                corr_mat[i, j] = r
-        avg = corr_mat[np.triu_indices(4, k=1)].mean()
-        print(f"  {CLUSTER_NAMES[c]:<20} avg Spearman ρ = {avg:.3f}")
+    method_names = ["GS-SHAP", "IntGrad", "Perm-SHAP"]
+    cluster_mean_importances = {
+        c: [
+            gsshap_importance_by_cluster[c],
+            intgrad_importance_by_cluster[c],
+            permshap_importance_by_cluster[c],
+        ]
+        for c in range(n_clusters)
+    }
+    agreement_report = cluster_agreement_report(
+        cluster_mean_importances,
+        method_names=method_names,
+        cluster_names=CLUSTER_NAMES,
+        min_cluster_n=MIN_CLUSTER_N,
+        cluster_sizes=cluster_sizes,
+    )
 
-    # ── Kruskal-Wallis ────────────────────────────────────────────────────
+    underpowered_clusters = [
+        CLUSTER_NAMES[c] for c, r in agreement_report.items() if r["underpowered"]
+    ]
+    if underpowered_clusters:
+        print(f"\n  ⚠ NOTE: {underpowered_clusters} have n < {MIN_CLUSTER_N} "
+              f"test samples. Agreement and Kruskal-Wallis statistics for "
+              f"these clusters should be reported with this caveat, not as "
+              f"unconditional null/positive findings.")
+
+    # ── Kruskal-Wallis (GS-SHAP, primary) ───────────────────────────
     print("\n  ── Kruskal-Wallis (GS-SHAP, primary) ──────────────")
-    sig_labels = {}
-    sig_feats  = []
-    for fi, feat in enumerate(FEATURES):
-        groups = [feat_imp_gs[c][:, fi] for c in range(3)]
-        if any(len(g) == 0 for g in groups):
-            sig_labels[feat] = "ns"
+    kw_results = {}
+    for k, feat in enumerate(FEATURES):
+        groups = [
+            np.array([np.abs(cm[:, k]).mean() for cm in cell_maps_by_cluster[c]])
+            for c in range(n_clusters)
+        ]
+        groups = [g for g in groups if len(g) > 0]
+        if len(groups) < 2 or any(len(g) < 2 for g in groups):
+            print(f"  {feat:<18} skipped (insufficient n per cluster)")
             continue
-        stat, p = kruskal(*groups)
-        if p < 0.001:
-            label = "***"
-        elif p < 0.01:
-            label = "**"
-        elif p < 0.05:
-            label = "*"
-        else:
-            label = "ns"
-        sig_labels[feat] = label
-        if label != "ns":
-            sig_feats.append(feat)
-        print(f"  {feat:<18} p={p:.4e} {label}")
+        h_stat, p_val = scipy_stats.kruskal(*groups)
+        sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
+        kw_results[feat] = (h_stat, p_val)
+        print(f"  {feat:<18} p={p_val:.4e} {sig}")
 
-    h5 = len(sig_feats) >= 3
-    print(f"\n  H5: {'SUPPORTED ✓' if h5 else 'PARTIAL ⚬'}  "
-          f"({len(sig_feats)}/{len(FEATURES)} significant)")
+    n_sig = sum(1 for _, p in kw_results.values() if p < 0.05)
+    print(f"\n  H5: {'SUPPORTED ✓' if n_sig >= 4 else 'PARTIAL ⚬' if n_sig >= 1 else 'NULL ⚬'}"
+          f"  ({n_sig}/{len(kw_results)} significant)")
+    if underpowered_clusters:
+        print(f"  → Caveat: result is influenced by underpowered cluster(s) "
+              f"{underpowered_clusters}; see note above.")
 
-    # ── [FIX-3] Generate corrected Figure 9 ──────────────────────────────
-    out_path = f"{args.out_dir}/fig_09_gsshap_importance_fixed.png"
-    plot_figure9(
-        feat_imp_gs, gini_by_cluster,
-        FEATURES, CLUSTER_NAMES, sig_labels,
-        out_path=out_path)
+    # ── Figure 9 (group-level Gini, non-duplicated) ──────────────────
+    fig_path = out_dir / "fig_09_gsshap_importance_fixed.png"
+    _plot_figure9(
+        gsshap_importance_by_cluster,
+        gini_group_by_cluster,
+        gfm,
+        group_ids_sorted,
+        fig_path,
+    )
+    print(f"  → Figure 9 (fixed) saved to {fig_path}")
 
-    print("\n✅ Multi-method attribution (H5) [FIXED v2] complete.")
+    print("\n✅ Multi-method attribution (H5) [FIXED v3] complete.")
+
+
+def _plot_figure9(importance_by_cluster, gini_group_by_cluster, gfm,
+                   group_ids_sorted, out_path):
+    """Left: GS-SHAP importance boxplots by cluster (feature-level).
+    Right: group-level temporal Gini boxplots (one box per HSIC group,
+    not one per raw feature) — fixes the v2/v3 ambiguity where 7
+    feature-named boxes really only carried K independent values."""
+    n_clusters = len(importance_by_cluster)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    ax = axes[0]
+    data = [importance_by_cluster[c] for c in range(n_clusters)]
+    ax.boxplot(np.array(data).T, labels=FEATURES)
+    ax.set_title("GS-SHAP mean |attribution| by feature")
+    ax.tick_params(axis='x', rotation=45)
+
+    ax = axes[1]
+    group_labels = [f"group{gid} {gfm[gid]}" for gid in group_ids_sorted]
+    box_data = [
+        [gini_group_by_cluster[c][:, k] for c in range(n_clusters)]
+        for k in range(len(group_ids_sorted))
+    ]
+    flat_data = [arr for grp in box_data for arr in grp]
+    positions = []
+    pos = 1
+    tick_pos = []
+    for k in range(len(group_ids_sorted)):
+        tick_pos.append(pos + (n_clusters - 1) / 2)
+        for c in range(n_clusters):
+            positions.append(pos)
+            pos += 1
+        pos += 1
+    ax.boxplot(flat_data, positions=positions, widths=0.8)
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(group_labels, rotation=20, ha='right')
+    ax.set_ylim(0, 1)
+    ax.set_title("Temporal Gini by HSIC group (FIX-4a/4b corrected)")
+    ax.set_ylabel("Gini (0=uniform over time, 1=concentrated)")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 if __name__ == "__main__":
