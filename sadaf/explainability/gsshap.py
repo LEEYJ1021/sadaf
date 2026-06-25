@@ -1,27 +1,80 @@
 """
-sadaf/explainability/gsshap.py  [FIXED v2]
+sadaf/explainability/gsshap.py  [FIXED v3]
 -------------------------------------------
-Changes vs. original
----------------------
-FIX-3  (Temporal Gini was blank in Figure 9):
-  - temporal_gini() function added.
-    The original viz code was computing Gini on *signed* cell_map values,
-    so positive and negative attributions cancelled out → all values
-    near 0 → invisible boxplots.
-    Correct implementation:
-      (a) take np.abs(cell_map) before computing Gini, and
-      (b) apply the standard Gini formula on the T-dimensional time
-          concentration vector per feature.
-  - explain() return signature unchanged; a new explain_with_gini()
-    convenience wrapper returns the Gini vector alongside existing outputs.
-  - compute_cluster_gini() batch helper added for 07_explainability.py
-    and 10_figures.py to call directly.
+Changes vs. v2
+--------------
+FIX-3   (carried over from v2, unchanged):
+  - temporal_gini() computes Gini on |cell_map|, not signed cell_map,
+    preventing positive/negative attribution cancellation.
 
-All HSIC, player, and Shapley logic is unchanged.
+FIX-4a  (NEW — the dominant root cause of Gini ≈ 0.98–0.99 clustering
+         in Figure 9, found by unit-testing temporal_gini() in
+         isolation):
+  - The Gini formula itself was implemented incorrectly. The v2 code
+        g = (n + 1 - 2 * cumx.sum() / (total * n)) / n
+    divides the *sum of the cumulative sums* by (total * n), but the
+    standard Gini coefficient requires dividing the sum of *rank-
+    weighted* values by (n * total):
+        G = (2 * sum(i * x_i for i in 1..n)) / (n * total) - (n+1)/n
+    The v2 formula is dimensionally different and does not reduce to
+    0 for a perfectly uniform input. Verified by unit test: a fully
+    uniform attribution vector [0.5, 0.5, 0.5, 0.5] — which should
+    give Gini = 0 (no concentration at all) — gave Gini = 0.9375
+    under the old formula. Some inputs even produced values above 1.0
+    (e.g. 1.10), which were then silently clipped to 1.0, masking the
+    bug. This alone explains why nearly every cluster/feature in the
+    original run reported Gini in the 0.97–1.00 band regardless of
+    the actual attribution pattern.
+  - Replaced with the standard rank-weighted Gini formula (see
+    temporal_gini() below). Re-verified: uniform input now correctly
+    gives 0.0, and a mild 40/25/20/15 skew now gives 0.20 instead of
+    0.9875.
+
+FIX-4b  (NEW — secondary contributor: segmentation resolution):
+  - Independently of FIX-4a, the time-segmentation resolution was
+    also too coarse. With T=4 and max_segments=4, the old formula
+        seg_len = max(min_seg_len, T // max_segments)
+                = max(2, 4 // 4) = max(2, 1) = 2
+    collapsed the 4 time steps into only 2 segments, so each player
+    covered 2 adjacent time steps with one shared Shapley value,
+    halving the temporal resolution available to any Gini-like
+    concentration measure.
+  - min_seg_len default changed 2 → 1, and seg_len is now computed as
+    ceil(T / max_segments) instead of floor, so T=4 → 4 segments of
+    length 1 (one per time step) instead of 2 segments of length 2.
+  - This is a behavior change: GSSHAP now produces up to 2x more
+    players (e.g. 4 → 8 for T=4, K=2 groups). Runtime scales linearly
+    with n_players, so num_permutations may need to be reduced for
+    very long sequences; for T<=8 this is not a practical concern.
+
+CAVEAT (documented, not "fixed" — inherent to SEQ_LEN=4):
+  - Even with both fixes applied, Gini computed over only T=4 points
+    has limited resolution: there are only 4 possible "ranks" to
+    spread mass across, so the achievable Gini range is coarser than
+    it would be at, e.g., T=20. Cross-checking Figure 7's SEQ_LEN=6
+    sequences (or computing Gini on a longer SEQ_LEN run) is
+    recommended before treating any specific Gini value as precise
+    rather than directionally indicative.
+
+FIX-5   (NEW — feature-level Gini was misleading when HSIC groups
+         feature multiple raw features together):
+  - Added group_feature_map() and a `level` argument to
+    compute_cluster_gini()/temporal_gini() so callers can request
+    results keyed by HSIC group instead of raw feature. Features
+    inside the same HSIC group share an identical cell_map slice by
+    construction (GS-SHAP is a *group*-Shapley method), so reporting
+    7 individually-named features that are actually 2 group-level
+    numbers is misleading. Per-feature output is still available for
+    backward compatibility but is now explicitly documented as
+    "inherited from group" wherever a feature belongs to a group of
+    size > 1.
+
+All HSIC, player, and Shapley logic is otherwise unchanged from v2.
 """
 
 from __future__ import annotations
 
+import math
 import time
 import numpy as np
 import torch
@@ -84,22 +137,39 @@ def _hsic_feature_groups(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# [FIX-3] Temporal Gini concentration index
+# [FIX-3 / FIX-4] Temporal Gini concentration index
 # ─────────────────────────────────────────────────────────────────────────────
 
 def temporal_gini(cell_map: np.ndarray) -> np.ndarray:
     """
-    Compute the temporal Gini concentration index per feature.
+    Compute the temporal Gini concentration index per feature column.
 
-    [FIX-3] The original viz code applied Gini to *signed* cell_map values,
-    causing positive and negative attributions to cancel → values ≈ 0
-    → invisible boxplots in Figure 9 right panel.
+    [FIX-3] Uses |cell_map| so signed attributions don't cancel.
+    [FIX-4a] Uses the *correct* rank-weighted Gini formula:
 
-    Correct procedure:
-      1. Take absolute values  (attribution magnitude, not direction).
-      2. Apply the Lorenz-based Gini formula along the time axis.
-         Gini ∈ [0, 1]:  0 = attribution spread uniformly over all
-         time steps; 1 = attribution concentrated in a single step.
+        G = (2 * sum_{i=1}^{n} i * x_(i)) / (n * sum(x)) - (n + 1) / n
+
+    where x_(i) is the i-th smallest value (1-indexed). This is the
+    standard Gini coefficient (equivalent to the Lorenz-curve-area
+    definition). The v2 implementation divided by (total * n) instead
+    of the rank-weighted sum, which does not reduce to 0 for a
+    uniform input — verified by unit test (uniform [0.5,0.5,0.5,0.5]
+    incorrectly gave 0.9375 under the old formula; the corrected
+    formula gives exactly 0.0). See module docstring FIX-4a.
+
+    [FIX-4b] Meaningful only when cell_map has fine enough time
+            resolution (see GSSHAP segmentation fix) — with too few
+            distinct time segments, Gini has fewer achievable values
+            and is coarser, though no longer biased toward 1.
+
+    NOTE: If `cell_map` was produced by a *group*-Shapley method
+    (GS-SHAP), all raw feature columns that belong to the same HSIC
+    group will be numerically identical by construction (see
+    GSSHAP.explain()). Gini computed on those columns will therefore
+    also be identical. This is expected, not a bug — see
+    group_feature_map() / compute_cluster_gini(level="group") to get
+    one number per HSIC group instead of D numbers that are partly
+    duplicates of each other.
 
     Parameters
     ----------
@@ -109,67 +179,146 @@ def temporal_gini(cell_map: np.ndarray) -> np.ndarray:
     Returns
     -------
     gini : np.ndarray, shape (D,)
-        Temporal Gini index per feature.  Values are in [0, 1].
+        Temporal Gini index per feature. Values are in [0, 1].
+        0 = attribution spread perfectly uniformly across all time
+        steps; 1 = attribution concentrated entirely in a single step.
     """
-    # Step 1 — use absolute attributions  ←  THE critical fix
-    abs_map = np.abs(cell_map)            # (T, D)
+    abs_map = np.abs(cell_map)            # (T, D)  — FIX-3
     T, D    = abs_map.shape
     gini    = np.zeros(D)
 
     for d in range(D):
-        x = np.sort(abs_map[:, d])        # ascending sort
+        x = np.sort(abs_map[:, d])        # ascending sort, x_(1) <= ... <= x_(n)
         total = x.sum()
         if total < 1e-12:                 # zero attribution → Gini = 0
             gini[d] = 0.0
             continue
-        # Lorenz-based formula: G = 1 - (2/n·S) * Σ_{i=1}^{n} (n-i+1)·x_i
-        # Equivalent to the more common: G = (Σ|x_i - x_j|) / (2·n·Σx_i)
-        n       = len(x)
-        cumx    = np.cumsum(x)
-        gini[d] = float(
-            (n + 1 - 2 * cumx.sum() / (total * n)) / n
-        )
-        gini[d] = float(np.clip(gini[d], 0.0, 1.0))
+        n = len(x)
+        rank_weighted = np.sum((np.arange(1, n + 1)) * x)   # sum_i i * x_(i)
+        g = (2.0 * rank_weighted) / (n * total) - (n + 1) / n
+        gini[d] = float(np.clip(g, 0.0, 1.0))
 
     return gini
 
 
+def group_feature_map(players: list[dict]) -> dict[int, list[int]]:
+    """
+    [FIX-5] Recover {group_id: [feature_indices]} from a GSSHAP
+    players list, so callers can tell which raw features are tied
+    together (and will therefore have identical cell_map / Gini
+    values) vs. which are independent.
+
+    Parameters
+    ----------
+    players : list[dict]
+        GSSHAP.players (or any players list with 'group_id' and
+        'var_indices' keys).
+
+    Returns
+    -------
+    {group_id: sorted list of feature indices in that group}
+    """
+    out: dict[int, list[int]] = {}
+    for p in players:
+        gid = p["group_id"]
+        out.setdefault(gid, set()).update(p["var_indices"])
+    return {gid: sorted(idxs) for gid, idxs in out.items()}
+
+
+def group_temporal_gini(
+    cell_map: np.ndarray,
+    players: list[dict],
+) -> dict[int, float]:
+    """
+    [FIX-5] Compute one Gini value per HSIC *group* rather than per
+    raw feature. Since all features within a group share identical
+    cell_map columns, this picks one representative column per group
+    instead of reporting the same number D/|groups| times.
+
+    Returns
+    -------
+    {group_id: gini_value}
+    """
+    gfm = group_feature_map(players)
+    full_gini = temporal_gini(cell_map)
+    return {gid: float(full_gini[idxs[0]]) for gid, idxs in gfm.items()}
+
+
 def compute_cluster_gini(
     cell_maps_by_cluster: dict[int, list[np.ndarray]],
+    players: list[dict] | None = None,
+    level: str = "feature",
 ) -> dict[int, np.ndarray]:
     """
-    [FIX-3] Batch helper: compute per-sample temporal Gini for each cluster.
+    Batch helper: compute per-sample temporal Gini for each cluster.
 
     Parameters
     ----------
     cell_maps_by_cluster : dict
-        {cluster_id: [cell_map_1, cell_map_2, ...]}
-        where each cell_map has shape (T, D).
+        {cluster_id: [cell_map_1, cell_map_2, ...]}, each (T, D).
+    players : list[dict] or None
+        Required when level="group". GSSHAP.players (group structure
+        is assumed identical across all cell_maps passed in).
+    level : {"feature", "group"}
+        "feature" (default, backward compatible): returns (n, D)
+            arrays, one column per raw feature. Columns belonging to
+            the same HSIC group will be numerically identical — see
+            temporal_gini() docstring.
+        "group": [FIX-5] returns (n, K) arrays, one column per HSIC
+            group (K = number of HSIC groups), with no duplicated
+            columns. Use this for Figure 9 reporting to avoid
+            presenting the same number multiple times under different
+            feature names.
 
     Returns
     -------
     gini_by_cluster : dict
-        {cluster_id: np.ndarray of shape (n_samples, D)}
-        Can be passed directly to plt.boxplot / seaborn.boxplot.
+        {cluster_id: np.ndarray of shape (n_samples, D or K)}
     """
-    gini_by_cluster = {}
+    if level not in ("feature", "group"):
+        raise ValueError("level must be 'feature' or 'group'")
+    if level == "group" and players is None:
+        raise ValueError("players must be provided when level='group'")
+
+    gini_by_cluster: dict[int, np.ndarray] = {}
+
+    if level == "feature":
+        for c, cms in cell_maps_by_cluster.items():
+            if not cms:
+                gini_by_cluster[c] = np.zeros((1, 7))
+                continue
+            gini_by_cluster[c] = np.array([temporal_gini(cm) for cm in cms])
+        return gini_by_cluster
+
+    # level == "group"
+    gfm = group_feature_map(players)
+    group_ids = sorted(gfm.keys())
     for c, cms in cell_maps_by_cluster.items():
         if not cms:
-            gini_by_cluster[c] = np.zeros((1, cms[0].shape[-1]
-                                            if cms else 7))
+            gini_by_cluster[c] = np.zeros((1, len(group_ids)))
             continue
-        gini_by_cluster[c] = np.array([temporal_gini(cm) for cm in cms])
+        rows = []
+        for cm in cms:
+            g = group_temporal_gini(cm, players)
+            rows.append([g[gid] for gid in group_ids])
+        gini_by_cluster[c] = np.array(rows)
     return gini_by_cluster
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main GSSHAP class  (logic unchanged; new explain_with_gini() added)
+# Main GSSHAP class
 # ─────────────────────────────────────────────────────────────────────────────
 
 class GSSHAP:
     """
     Group-SHAP with HSIC-based feature grouping for temporal sequences.
-    [FIX-3] New method explain_with_gini() returns Gini alongside Shapley.
+
+    [FIX-4b] Time segmentation now defaults to one segment per time
+    step (min_seg_len=1, seg_len computed via ceil instead of floor),
+    so cell_map carries full temporal resolution instead of being
+    coarsened into 2 wide blocks. This is a secondary contributor to
+    the Gini clustering artefact described at the top of this file;
+    see FIX-4a for the dominant cause (an incorrect Gini formula).
     """
 
     def __init__(
@@ -179,7 +328,7 @@ class GSSHAP:
         task: str = "reg",
         device: torch.device | None = None,
         hsic_max_samples: int = 2000,
-        min_seg_len: int = 2,
+        min_seg_len: int = 1,          # [FIX-4] was 2
         max_segments: int = 4,
         threshold_permutations: int = 30,
         num_permutations: int = 100,
@@ -204,7 +353,15 @@ class GSSHAP:
         print(f"  [HSIC] eigengap → K={K} groups (D={D} features)")
         print(f"  Groups: {self.feature_groups}  ({time.time()-t0:.2f}s)")
 
-        seg_len = max(min_seg_len, T // max_segments)
+        # [FIX-4b] ceil-based segment length so T=4, max_segments=4 → 4
+        # segments of length 1, instead of floor-based 2 segments of
+        # length 2. Falls back to min_seg_len only if that would make
+        # segments *larger* than requested (i.e. min_seg_len still
+        # acts as a floor on resolution, not a forced coarsening).
+        seg_len = max(min_seg_len, math.ceil(T / max_segments))
+        self.seg_len = seg_len
+        n_time_segments = math.ceil(T / seg_len)
+
         self.players: list[dict] = []
         for gid, grp in enumerate(self.feature_groups):
             for t_start in range(0, T, seg_len):
@@ -218,6 +375,12 @@ class GSSHAP:
                 )
 
         self.n_players = len(self.players)
+        print(
+            f"  [Segmentation] seg_len={seg_len}, "
+            f"time_segments={n_time_segments}, "
+            f"n_players={self.n_players} "
+            f"(K={K} groups × {n_time_segments} time segments)"
+        )
         self._baseline = X_train.mean(axis=0)   # (T, D)
 
     # ── Prediction ────────────────────────────────────────────────────────
@@ -247,8 +410,15 @@ class GSSHAP:
         seed: int = 0,
     ) -> tuple[np.ndarray, list[dict], np.ndarray]:
         """
-        Original interface — returns (phi, players, cell_map).
+        Returns (phi, players, cell_map).
         cell_map shape: (T, D), signed attributions.
+
+        NOTE: All raw feature indices that belong to the same HSIC
+        group (self.feature_groups) receive an identical cell_map
+        slice in the time dimension by construction — GS-SHAP assigns
+        one Shapley value per (group, time-segment) player and
+        broadcasts it across every feature in that group. Use
+        group_feature_map(players) to see which features share values.
         """
         rng = np.random.default_rng(seed)
         phi = np.zeros(self.n_players)
@@ -279,23 +449,36 @@ class GSSHAP:
 
         return phi, self.players, cell_map
 
-    # ── [FIX-3] Convenience wrapper with Gini ─────────────────────────────
+    # ── Convenience wrapper with Gini ──────────────────────────────────────
     def explain_with_gini(
         self,
         x: np.ndarray,
         seed: int = 0,
-    ) -> tuple[np.ndarray, list[dict], np.ndarray, np.ndarray]:
+        level: str = "feature",
+    ) -> tuple[np.ndarray, list[dict], np.ndarray, np.ndarray | dict]:
         """
-        [FIX-3] Extended explain() that also returns temporal Gini.
+        Extended explain() that also returns temporal Gini.
+
+        Parameters
+        ----------
+        level : {"feature", "group"}
+            "feature": gini is np.ndarray (D,) — see temporal_gini()
+                notes on duplicated values within an HSIC group.
+            "group": [FIX-5] gini is dict {group_id: float}, one
+                non-duplicated value per HSIC group.
 
         Returns
         -------
         phi      : np.ndarray (n_players,)   — Shapley values per player
         players  : list[dict]                — player metadata
         cell_map : np.ndarray (T, D)         — signed attribution grid
-        gini     : np.ndarray (D,)           — temporal Gini per feature
-                   Computed from |cell_map| to avoid sign-cancellation.
+        gini     : np.ndarray (D,) or dict[int, float], depending on `level`
         """
         phi, players, cell_map = self.explain(x, seed=seed)
-        gini = temporal_gini(cell_map)      # [FIX-3] abs-value Gini
+        if level == "feature":
+            gini = temporal_gini(cell_map)
+        elif level == "group":
+            gini = group_temporal_gini(cell_map, players)
+        else:
+            raise ValueError("level must be 'feature' or 'group'")
         return phi, players, cell_map, gini
