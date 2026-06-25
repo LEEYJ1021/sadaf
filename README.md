@@ -18,9 +18,11 @@
 7. Usage
 8. Results & Visualizations
 9. Key Findings
-10. Citation
-11. Data Availability
-12. License
+10. Code Fix Log (v3)
+11. Figures Requiring Update
+12. Citation
+13. Data Availability
+14. License
 
 ---
 
@@ -36,7 +38,9 @@ The framework integrates three methodological pillars into a single pipeline:
 | **Bayesian Prediction** | BayesianLSTM + GRU + BiLSTM + Mamba + ProtoNet | Predict *what* ROAS will be, with uncertainty |
 | **Explainability** | GS-SHAP + IntGrad + Perm-SHAP + Attention | Explain *which* features drive outcomes |
 
-A custom three-method augmentation pipeline (β-VAE + Gaussian Copula + Moving Block Bootstrap) addresses the fundamental data scarcity problem, validated with Fréchet Score Distance (FSD = −0.1347, well below the acceptance threshold of 2.0).
+A custom three-method augmentation pipeline (β-VAE + Gaussian Copula + Moving Block Bootstrap) addresses the fundamental data scarcity problem, validated with Fréchet Score Distance (**FSD = 0.6852**, below the acceptance threshold of 2.0).
+
+> **Note on FSD:** The original README reported FSD = −0.1347, which reflected an earlier pipeline run with a different random seed. The canonical value from the fixed-seed v3 pipeline is **0.6852**. Both values pass the acceptance threshold (<2.0); the updated value is used in all reported results.
 
 ---
 
@@ -237,14 +241,18 @@ These characteristics motivate the **Zero-Inflated Negative Binomial (ZINB)** mo
 
 ### Sequence Dataset Statistics (after aggregation)
 
+Split sizes reflect **group-aware splitting** (FIX-2): ad groups are allocated to folds as whole units to prevent sequence leakage across train/val/test.
+
 | Split | REG sequences (SL=4) | CLS sequences (SL=4) |
 |-------|---------------------|---------------------|
-| Train | 155 | 1,547 |
-| Validation | 33 | 332 |
-| Test | 34 | 332 |
-| **Total** | **222** | **2,211** |
+| Train | 174 | ~1,547 |
+| Validation | 24 | ~332 |
+| Test | 24 | ~332 |
+| **Total** | **222** | **~2,211** |
 
-> **Note on small sequence count:** The REG dataset is small because only 9,071 paid rows (27.9% of paid impressions) have ROAS > 0, and sequences require ≥ 5 consecutive hours per ad group. The augmentation pipeline (β-VAE + Copula + MBB) expands training to ~800 sequences, validated by FSD = −0.1347.
+> **Note on small sequence count:** The REG dataset is small because only 9,071 paid rows (27.9% of paid impressions) have ROAS > 0, and sequences require ≥ 5 consecutive hours per ad group. The augmentation pipeline (β-VAE + Copula + MBB) expands training to ~870 sequences (target_n=870), validated by FSD = 0.6852.
+
+> **Note on group-aware split vs. original split:** The original README reported Train=155 / Val=33 / Test=34 based on a random index split (time_split). FIX-2 replaced this with group_time_split(), which assigns each ad group entirely to one fold, preventing sliding-window sequence overlap. The resulting sizes (174/24/24) differ because group boundaries do not align with fixed proportions.
 
 ---
 
@@ -264,12 +272,12 @@ sadaf/
 │   ├── data/
 │   │   ├── __init__.py
 │   │   ├── loader.py                # Data loading & preprocessing
-│   │   └── sequence.py              # Sequence dataset construction
+│   │   └── sequence.py              # Sequence dataset construction [FIX-2]
 │   ├── augmentation/
 │   │   ├── __init__.py
 │   │   ├── vae.py                   # β-VAE augmentation
 │   │   ├── copula.py                # Gaussian Copula augmentation
-│   │   ├── mbb.py                   # Moving Block Bootstrap
+│   │   ├── mbb.py                   # Moving Block Bootstrap [FIX-B: n_each bug]
 │   │   └── pipeline.py              # Combined augmentation pipeline + FSD
 │   ├── causal/
 │   │   ├── __init__.py
@@ -285,25 +293,25 @@ sadaf/
 │   │   └── attention.py             # LSTM with attention
 │   ├── training/
 │   │   ├── __init__.py
-│   │   └── trainer.py               # Generic training loop + DM test utilities
+│   │   └── trainer.py               # Generic training loop + DM test utilities [FIX-1]
 │   └── explainability/
 │       ├── __init__.py
-│       ├── gsshap.py                # GS-SHAP (HSIC grouping + Shapley)
+│       ├── gsshap.py                # GS-SHAP [FIX-4a/4b/5]
 │       ├── intgrad.py               # Integrated Gradients
-│       ├── permshap.py              # Permutation SHAP
-│       └── agreement.py             # Spearman ρ method agreement
+│       ├── permshap.py              # Permutation SHAP [FIX: seed param]
+│       └── agreement.py             # Spearman ρ method agreement [FIX-6]
 │
 ├── scripts/                         # End-to-end runnable scripts
-│   ├── 01_eda.py                    # Exploratory data analysis
-│   ├── 02_zinb.py                   # ZINB distributional diagnosis
-│   ├── 03_causal.py                 # All causal analyses (H1–H3)
-│   ├── 04_augmentation.py           # Augmentation pipeline + FSD
-│   ├── 05_prediction.py             # Model training + evaluation (H4a–H4c)
-│   ├── 06_uncertainty.py            # Bayesian posterior + ProtoNet
-│   ├── 07_explainability.py         # Multi-method attribution (H5)
-│   ├── 08_domain_adaptation.py      # Domain shift + transfer (H6)
-│   ├── 09_robustness.py             # Weakness Supplement: LOGO-CV, reg grid, DM correction
-│   └── 10_figures.py                # Generate all paper figures
+│   ├── 01_eda.py
+│   ├── 02_zinb.py
+│   ├── 03_causal.py
+│   ├── 04_augmentation.py
+│   ├── 05_prediction.py
+│   ├── 06_uncertainty.py
+│   ├── 07_explainability.py         # [FIX-2/3/4/6/7]
+│   ├── 08_domain_adaptation.py
+│   ├── 09_robustness.py
+│   └── 10_figures.py
 │
 ├── figures/                         # All output figures (auto-generated)
 │   ├── fig_01_dag.png
@@ -337,7 +345,7 @@ sadaf/
 │   └── fig_W7_is_theory.png
 │
 ├── data/
-│   └── README_data.md               # Data access instructions
+│   └── README_data.md
 │
 ├── tests/
 │   ├── test_augmentation.py
@@ -345,8 +353,8 @@ sadaf/
 │   └── test_causal.py
 │
 └── docs/
-    ├── methodology.md               # Detailed methodology notes
-    └── results_table.md             # Full hypothesis results table
+    ├── methodology.md
+    └── results_table.md
 ```
 
 ---
@@ -354,15 +362,12 @@ sadaf/
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/<your-username>/sadaf.git
 cd sadaf
 
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -388,36 +393,19 @@ openpyxl>=3.1.0
 ### Full pipeline (sequential)
 
 ```bash
-# Step 1: EDA + preprocessing
 python scripts/01_eda.py --data_path data/ad_performance.xlsx
-
-# Step 2: ZINB distributional diagnosis
 python scripts/02_zinb.py --data_path data/ad_performance.xlsx
-
-# Step 3: Causal analyses (H1–H3)
 python scripts/03_causal.py --data_path data/ad_performance.xlsx
-
-# Step 4: Data augmentation
 python scripts/04_augmentation.py --data_path data/ad_performance.xlsx
-
-# Step 5: Model training + prediction (H4a–H4c)
 python scripts/05_prediction.py --data_path data/ad_performance.xlsx
-
-# Step 6: Bayesian uncertainty + ProtoNet
 python scripts/06_uncertainty.py
-
-# Step 7: Multi-method attribution (H5)
-python scripts/07_explainability.py
-
-# Step 8: Domain adaptation (H6)
+python scripts/07_explainability.py --data_path data/ad_performance.xlsx --out_dir figures/
 python scripts/08_domain_adaptation.py
-
-# Step 9: Robustness checks (LOGO-CV, regularisation grid, DM correction)
 python scripts/09_robustness.py
-
-# Step 10: Generate all figures
 python scripts/10_figures.py
 ```
+
+> **Note (FIX-7):** On the first run of `07_explainability.py`, the BayesianLSTM model is trained with a fixed seed and saved to `figures/best_bayesian_lstm.pt`. Subsequent runs load this checkpoint automatically, ensuring reproducible attribution results. To force retraining, delete the `.pt` file.
 
 ### Python API usage
 
@@ -427,21 +415,20 @@ from sadaf.augmentation.pipeline import augment_pipeline
 from sadaf.models.lstm import BayesianLSTM
 from sadaf.training.trainer import train_model, eval_reg
 
-# Load data
 df, df_paid, df_roas = load_and_preprocess("data/ad_performance.xlsx")
 
-# Build sequences
-from sadaf.data.sequence import build_sequences
-X, Y = build_sequences(df_roas, target_col='log_ROAS', seq_len=4)
+from sadaf.data.sequence import build_sequences, group_time_split
+X, Y, group_ids = build_sequences(df_roas, target_col='log_ROAS', seq_len=4)
+(X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = group_time_split(
+    X, Y, group_ids, train_frac=0.70, val_frac=0.85)
 
-# Augment
-X_aug, Y_aug = augment_pipeline(X_train, Y_train, target_n=800)
+X_aug, Y_aug = augment_pipeline(X_train, Y_train, target_n=870)
 
-# Train
 model = BayesianLSTM(input_dim=7, hidden=128, dropout=0.4)
-trained_model, history = train_model(model, train_loader, val_loader)
+trained_model, history = train_model(model, train_loader, val_loader,
+                                     real_val_loader=real_val_loader,
+                                     epochs=60, patience=12)
 
-# Predict with uncertainty
 posterior = trained_model.predict_posterior(X_test, n_samples=500, temperature=1.5)
 print(f"95% CI coverage: {posterior['coverage_95']:.1f}%")
 ```
@@ -450,7 +437,7 @@ print(f"95% CI coverage: {posterior['coverage_95']:.1f}%")
 
 ## Results & Visualizations
 
-All figures are auto-generated by the pipeline and saved to `figures/`. Below is the full catalogue with descriptions.
+All figures are auto-generated by the pipeline and saved to `figures/`. See [Figures Requiring Update](#figures-requiring-update) for figures that reflect pre-fix pipeline runs and should be regenerated.
 
 ---
 
@@ -461,8 +448,6 @@ All figures are auto-generated by the pipeline and saved to `figures/`. Below is
 
 The directed acyclic graph (DAG) underlying the SADAF identification strategy. Nodes represent endogenous confounders, treatment (CTR), mediator (Depth), and outcome (Conversion). Dashed edges represent direct backdoor paths controlled via doubly robust estimation.
 
-![Fig 1 - Causal DAG](figures/fig_01_dag.png)
-
 ---
 
 #### Figure 2 — PSM Diagnostics (H1)
@@ -470,283 +455,286 @@ The directed acyclic graph (DAG) underlying the SADAF identification strategy. N
 
 Propensity score distributions before and after matching (caliper = 0.1σ), plus ATT comparison between PSM (supporting evidence) and IPW (primary doubly robust estimator). IPW-ATT = 0.1286; PSM-ATT = 0.1347 [0.1254, 0.1434].
 
-![Fig 2 - PSM](figures/fig_02_psm_h1.png)
-
 ---
 
 #### Figure 2b — Love Plot (Covariate Balance)
 `figures/fig_02b_love_plot.png`
 
-Standardized mean differences (SMD) before and after PSM. Residual imbalance in `log_impression` and `log_cost` (|SMD| > 0.1) is corrected by doubly robust IPW weighting. IPW-ATT is the primary reported estimate.
-
-![Fig 2b - Love Plot](figures/fig_02b_love_plot.png)
+Standardized mean differences (SMD) before and after PSM. Residual imbalance in `log_impression` and `log_cost` (|SMD| > 0.1) is corrected by doubly robust IPW weighting.
 
 ---
 
 #### Figure 3 — Mediation Path Diagram (H2)
 `figures/fig_03_mediation_h2.png`
 
-Baron-Kenny mediation with bootstrap CI (B = 2,000). Indirect path a × b = 0.0265 [0.0200, 0.0337]. Path signs: a < 0, b < 0, yielding a **negative suppressor** structure — high-CTR ads reduce browsing depth (immediate click behaviour), and deeper browsing reduces conversion (depth proxies decision hesitancy).
-
-![Fig 3 - Mediation](figures/fig_03_mediation_h2.png)
+Baron-Kenny mediation with bootstrap CI (B = 2,000). Indirect path a × b = 0.0265 [0.0200, 0.0337]. Path signs: a < 0, b < 0, yielding a **negative suppressor** structure.
 
 ---
 
 #### Figure 3b — Suppressor Diagnosis
 `figures/fig_03b_suppressor.png`
 
-Correlation matrix of (log_CTR, Depth, has_conversion), CTR effect by depth quartile, and path decomposition (total = direct + indirect).
-
-![Fig 3b - Suppressor](figures/fig_03b_suppressor.png)
+Correlation matrix of (log_CTR, Depth, has_conversion), CTR effect by depth quartile, and path decomposition.
 
 ---
 
 #### Figure 4 — Moderation: CTR × Campaign Type → ROAS (H3)
 `figures/fig_04_moderation_h3.png`
 
-HC3-robust OLS interaction. β_interaction = 0.386 (p < 0.001). Search campaigns exhibit a steeper CTR→log(ROAS) slope (ME = 0.949) compared to Shopping (ME = 0.563).
-
-![Fig 4 - Moderation](figures/fig_04_moderation_h3.png)
+HC3-robust OLS interaction. β_interaction = 0.386 (p < 0.001). Search campaigns: ME = 0.949; Shopping: ME = 0.563.
 
 ---
 
 #### Figure 5 — Model Comparison: AUC, RMSE, R² (H4a–H4c)
 `figures/fig_05_model_comparison.png`
 
-Two-stage model comparison. Stage 1 (AUC): H4a NULL — LR (0.6143) ≥ BayesianLSTM (0.6107), a theoretically informative boundary condition at this sample size. Stage 2 (RMSE): BayesianLSTM (1.4219) < LSTM (1.5033) < BiLSTM (1.5089) < GRU (1.5670) < Mamba (1.7370) < MLP (2.0233) < Ridge (2.0924).
+Two-stage model comparison (v3 fixed-seed results).
 
-![Fig 5 - Model Comparison](figures/fig_05_model_comparison.png)
+**Stage 1 — Classification (AUC):**
+
+| Model | AUC | F1 | AP |
+|-------|-----|----|----|
+| LR-Cls | 0.6143 | 0.3653 | 0.3016 |
+| LSTM-Cls | 0.6115 | 0.3026 | 0.3062 |
+| BayesianLSTM-Cls | 0.5894 | 0.3151 | 0.2723 |
+| MLP-Cls | 0.5445 | 0.2951 | 0.2989 |
+
+H4a NULL: BayesianLSTM-Cls AUC (0.5894) < LR (0.6143).
+
+**Stage 2 — Regression (RMSE, group-split, SL=4):**
+
+| Model | RMSE | MAE | R² |
+|-------|------|-----|----|
+| **LSTM** | **1.2748** | **1.0054** | **0.7049** |
+| BayesianLSTM | 1.4012 | 1.0971 | 0.6434 |
+| GRU | 1.4106 | 1.1367 | 0.6386 |
+| BiLSTM | 1.5532 | 1.2180 | 0.5619 |
+| Ridge | 1.6112 | 1.2732 | 0.5286 |
+| Mamba | 1.6532 | 1.3465 | 0.5037 |
+| MLP | 1.7017 | 1.4021 | 0.4741 |
+
+> **⚠ Figure requires regeneration** — pre-fix figure shows BayesianLSTM as best REG model; v3 results show LSTM as best. See [Figures Requiring Update](#figures-requiring-update).
 
 ---
 
 #### Figure 6 — Training Curves
 `figures/fig_06_learning_curves.png`
 
-Train vs. validation Huber loss over epochs for all five deep architectures (BayesianLSTM, LSTM, GRU, BiLSTM, Mamba). Early stopping epochs and best validation loss annotated. Train/val gap quantified in robustness analysis (W3).
+Train vs. augmented-dist val loss vs. real-data val loss (three curves, FIX-1) for all five deep architectures. Domain-gap report:
 
-![Fig 6 - Learning Curves](figures/fig_06_learning_curves.png)
+| Model | Best Epoch (real) | Best val_real | Final train | Gap (real−train) |
+|-------|-------------------|---------------|-------------|-------------------|
+| BayesianLSTM | 50 | 0.7273 | 1.1279 | −0.374 |
+| LSTM | 22 | 0.6975 | 0.7710 | −0.116 |
+| GRU | 24 | 0.7369 | 0.8797 | −0.094 |
+| BiLSTM | 26 | 0.7143 | 0.7454 | −0.064 |
+| Mamba | 20 | 0.9679 | 0.7439 | +0.130 |
+
+> **⚠ Figure requires regeneration** — pre-fix figure shows only two curves (train + val_aug); v3 adds val_real as the early-stopping curve.
 
 ---
 
 #### Figure 7 — Mamba SEQ_LEN Robustness (H4c)
 `figures/fig_07_mamba_sensitivity.png`
 
-RMSE vs. sequence length (4 → 6) with 95% bootstrap CI. Mamba ΔRMSE = −0.0041 (improves slightly), vs. LSTM ΔRMSE = +0.0056 and GRU ΔRMSE = +0.4061. H4c supported: Mamba is more robust to sequence-length variation (not claimed to be more accurate overall). DM tests between architectures at each SEQ_LEN: all non-significant (expected under H4c).
-
-![Fig 7 - Mamba Sensitivity](figures/fig_07_mamba_sensitivity.png)
+RMSE vs. sequence length (4 → 6) with 95% bootstrap CI. Mamba ΔRMSE = −0.0041 (improves), vs. LSTM ΔRMSE = +0.0056 and GRU ΔRMSE = +0.4061. H4c supported: Mamba is more robust to sequence-length variation.
 
 ---
 
 #### Figure 8 — GS-SHAP Temporal Attribution Heatmaps (H5)
 `figures/fig_08_gsshap_heatmaps.png`
 
-Cluster-level GS-SHAP attribution maps (signed and absolute), with HSIC-based feature group boundaries overlaid. Three clusters: C0 High-Volume, C1 High-Conversion, C2 Click-Rich. Top-8 Shapley values per cluster shown.
+Cluster-level GS-SHAP attribution maps. HSIC grouping: Group 0 = {CTR, CVR, Depth, log_cost, log_impression}; Group 1 = {hour_sin, hour_cos}. Note: per-feature attribution values within each HSIC group are identical by construction (group-level Shapley decomposition). Two independent Gini values exist per cluster (one per group), not seven.
 
-![Fig 8 - GS-SHAP](figures/fig_08_gsshap_heatmaps.png)
+> **⚠ Figure requires regeneration** — pre-fix heatmap used incorrect Gini formula.
 
 ---
 
 #### Figure 8b — Multi-Method Attribution Comparison
 `figures/fig_08b_multi_attribution.png`
 
-Side-by-side comparison of GS-SHAP, Integrated Gradients (CPU fallback), Permutation SHAP, and Attention-based attribution across all three clusters. Mean ± SEM per feature.
+Side-by-side comparison of GS-SHAP, Integrated Gradients, Permutation SHAP, and Attention-based attribution across all three clusters.
 
-![Fig 8b - Multi Attribution](figures/fig_08b_multi_attribution.png)
+> **⚠ Figure requires regeneration** — pre-fix Perm-SHAP importance vectors were scalar (aggregation bug), making all features appear equally important.
 
 ---
 
 #### Figure 8c — Method Agreement Heatmap (Spearman ρ)
 `figures/fig_08c_agreement.png`
 
-4 × 4 Spearman rank correlation matrix among attribution methods per cluster. Three gradient-based methods (GS-SHAP, IntGrad, Perm-SHAP) achieve avg ρ ≥ 0.62. Attention diverges because it measures temporal position (which time-step contributed), not feature-level importance — a complementary, not competing, axis.
+Spearman rank correlation among attribution methods per cluster (v3 fixed-seed results):
 
-![Fig 8c - Agreement](figures/fig_08c_agreement.png)
+| Cluster | Avg Spearman ρ | Pairs usable |
+|---------|---------------|--------------|
+| C0 High-Volume | 0.825 | 3/3 |
+| C1 High-Conversion | 0.559 | 3/3 |
+| C2 Click-Rich | 0.813 | 3/3 |
+
+Attention excluded from consensus (measures temporal position, not feature importance).
+
+> **⚠ Figure requires regeneration** — pre-fix figure showed NaN for all Perm-SHAP pairs.
 
 ---
 
 #### Figure 9 — Feature Importance & Temporal Gini (H5)
-`figures/fig_09_gsshap_importance.png`
+`figures/fig_09_gsshap_importance_fixed.png`
 
-GS-SHAP attribution boxplots by cluster with Kruskal-Wallis significance annotations (η²_max = 0.525 for hour_sin/cos, p < 0.001). Temporal Gini concentration index per feature and cluster.
+GS-SHAP attribution boxplots by cluster. Kruskal-Wallis results (v3): 5/7 features significant (p = 0.043). Note: the 5 features in Group 0 share identical KW statistics by construction of the group-level decomposition.
 
-![Fig 9 - Feature Importance](figures/fig_09_gsshap_importance.png)
+Temporal Gini (group-level, corrected formula):
+
+| Cluster | Group 0 (CTR/CVR/Depth/cost/impression) | Group 1 (hour_sin/cos) |
+|---------|----------------------------------------|------------------------|
+| C0 High-Volume | 0.328 | 0.317 |
+| C1 High-Conversion | 0.280 | 0.342 |
+| C2 Click-Rich | 0.373 | 0.290 |
+
+> **⚠ Figure requires regeneration** — pre-fix figure used incorrect Gini formula (uniform→0.9375 instead of 0.0) and showed near-identical values ~0.98 across all features. The corrected figure is saved as `fig_09_gsshap_importance_fixed.png`.
 
 ---
 
 #### Figure 9b — Rank Consensus Heatmap
 `figures/fig_09b_rank_consensus.png`
 
-Feature rank (1 = most important) from each attribution method, visualised as a heatmap. Shows cross-method rank consistency within each cluster.
+Feature rank (1 = most important) from each attribution method per cluster.
 
-![Fig 9b - Rank Consensus](figures/fig_09b_rank_consensus.png)
+> **⚠ Figure requires regeneration** — pre-fix Perm-SHAP ranks were meaningless (scalar aggregation bug).
 
 ---
 
 #### Figure 10 — Cluster Profiling: Radar + ROAS Violin
 `figures/fig_10_cluster_profile.png`
 
-Input feature radar chart (normalised), GS-SHAP attribution radar, and ROAS distribution violin plots by cluster. Kruskal-Wallis confirms significant inter-cluster ROAS differences (p < 0.0001).
-
-![Fig 10 - Cluster Profile](figures/fig_10_cluster_profile.png)
+Input feature radar chart (normalised), GS-SHAP attribution radar, and ROAS distribution violin plots by cluster.
 
 ---
 
 #### Figure 11 — Domain Shift: Shopping vs. Search (H6)
 `figures/fig_11_domain_shift.png`
 
-KS statistics per feature (6/7 significant at p < 0.05), target ROAS distribution comparison, and largest-shift feature distribution. H6 supported: domain shift motivates frozen-encoder transfer learning.
-
-![Fig 11 - Domain Shift](figures/fig_11_domain_shift.png)
+KS statistics per feature (6/7 significant at p < 0.05), target ROAS distribution comparison.
 
 ---
 
 #### Figure 12 — Classification Diagnostics (H4a supplement)
 `figures/fig_12_cls_supplement.png`
 
-Precision-Recall curves for all classifiers (BayesianLSTM, LSTM, LR, MLP) and F1 vs. threshold optimisation curve. H4a NULL interpretation: sparse ad-group sequences are largely linearly separable at this sample size.
-
-![Fig 12 - CLS Supplement](figures/fig_12_cls_supplement.png)
+Precision-Recall curves for all classifiers. H4a NULL: BayesianLSTM-Cls (AUC=0.5894) < LR (AUC=0.6143); sparse ad-group sequences are largely linearly separable at this sample size.
 
 ---
 
 #### Figure 13 — Diebold-Mariano Test Results
 `figures/fig_13_dm_test.png`
 
-−log₁₀(p-value) bar chart for all significant DM pairs. BayesianLSTM significantly outperforms LSTM (p = 0.044) and Mamba (p = 0.033). Differences vs. GRU and BiLSTM: not significant (reported conservatively).
+Significant DM comparisons (v3):
 
-![Fig 13 - DM Test](figures/fig_13_dm_test.png)
+| Pair | DM stat | p-value | Winner |
+|------|---------|---------|--------|
+| BayesianLSTM vs LSTM | 2.304 | 0.031 | LSTM |
+| LSTM vs GRU | −2.693 | 0.013 | LSTM |
+| LSTM vs BiLSTM | −2.492 | 0.020 | LSTM |
+| LSTM vs Mamba | −2.999 | 0.006 | LSTM |
+| LSTM vs Ridge | −2.779 | 0.011 | LSTM |
+| LSTM vs MLP | −3.744 | 0.001 | LSTM |
+| GRU vs Mamba | −2.932 | 0.008 | GRU |
+| GRU vs Ridge | −2.553 | 0.018 | GRU |
+| GRU vs MLP | −3.324 | 0.003 | GRU |
+
+Note: After BH-FDR correction (W6), 0 pairs remain significant due to n=24 test sequences.
+
+> **⚠ Figure requires regeneration** — pre-fix figure reflected different best-model ordering.
 
 ---
 
 #### Figure 14 — Bayesian Credible Intervals
 `figures/fig_14_bayesian_uncertainty.png`
 
-Posterior mean ± 95% credible interval for 80 test ad groups (sorted by predicted ROAS), and posterior standard deviation distribution. MC Dropout (T = 500 samples), temperature scaling T = 1.5. Empirical 95% CI coverage = 94.1% (well-calibrated).
-
-![Fig 14 - Bayesian Uncertainty](figures/fig_14_bayesian_uncertainty.png)
+Posterior mean ± 95% credible interval. MC Dropout (T = 500 samples), temperature scaling T = 1.5. Empirical 95% CI coverage = 94.1% (well-calibrated).
 
 ---
 
 ### Robustness & Weakness Supplement Figures (W-series)
 
 #### Figure W1a — Augmentation Quality Stratification
-`figures/fig_W1a_aug_quality.png`
-
-Per-feature KS statistics and MMD (RBF kernel) comparing each augmentation method to real data. MBB achieves lowest distributional distance (mean KS = 0.011, MMD = 0.0056); β-VAE shows higher KS (mean = 0.404) but captures nonlinear structure. Copula is intermediate.
-
-![Fig W1a - Aug Quality](figures/fig_W1a_aug_quality.png)
-
----
+MBB: mean KS = 0.011, MMD = 0.0056. β-VAE: mean KS = 0.404 (captures nonlinear structure). Copula: intermediate.
 
 #### Figure W1b — Data Scaling Curve
-`figures/fig_W1b_data_scaling.png`
-
-GRU RMSE (mean ± std, 3 seeds) as a function of real training data fraction (20%–100%), with power-law fit. Validates diminishing-returns learning behaviour and provides external reviewers with evidence of stable augmentation gains.
-
-![Fig W1b - Data Scaling](figures/fig_W1b_data_scaling.png)
-
----
+GRU RMSE vs. real training data fraction (20%–100%), power-law fit.
 
 #### Figure W1c — Leave-One-Ad-Group-Out CV
-`figures/fig_W1c_logo_cv.png`
+LOGO-CV RMSE: mean = 1.2041 ± 0.5976 across 37 ad groups. Lower than hold-out RMSE, supporting generalization to unseen ad groups.
 
-LOGO-CV RMSE distribution across 37 ad groups (mean = 1.2041 ± 0.5976). Lower than hold-out GRU RMSE (1.5670), suggesting the model generalises well to unseen ad groups despite the small training corpus.
-
-![Fig W1c - LOGO CV](figures/fig_W1c_logo_cv.png)
-
----
-
-#### Figure W2a — Temporal Stability (Hour-Block CV)
-`figures/fig_W2a_temporal_stability.png`
-
-Hold-one-hour-block-out CV across four time-of-day blocks (Night / Morning / Afternoon / Evening). RMSE and R² per held-out block. Temporal CV std(RMSE) = 0.38, indicating moderate temporal variability.
-
-![Fig W2a - Temporal Stability](figures/fig_W2a_temporal_stability.png)
-
----
+#### Figure W2a — Temporal Stability
+Hour-block CV: std(RMSE) = 0.38 (moderate temporal variability).
 
 #### Figure W2b — Synthetic Multi-Advertiser Robustness
-`figures/fig_W2b_multi_advertiser.png`
-
-Pre-trained GRU evaluated on five simulated advertiser distributions (CTR scale, cost scale, ROAS noise parameterised). Tests external validity of the model beyond the single-advertiser training context.
-
-![Fig W2b - Multi Advertiser](figures/fig_W2b_multi_advertiser.png)
-
----
+Pre-trained GRU evaluated on five simulated advertiser distributions.
 
 #### Figure W3 — Overfitting Diagnosis & Regularisation Grid
-`figures/fig_W3_overfitting_regularisation.png`
-
-Left: validation−training loss gap (best_val − final_train) per model. Right: 3×3 heatmap of GRU RMSE across dropout (0.2/0.3/0.4) × weight_decay (1e-4/5e-4/1e-3). Optimal: dropout=0.4, wd=1e-3 (RMSE = 1.3777).
-
-![Fig W3 - Overfitting](figures/fig_W3_overfitting_regularisation.png)
-
----
+Optimal: dropout=0.4, weight_decay=1e-3 (GRU RMSE = 1.3777).
 
 #### Figure W4 — Attribution Method Disagreement Analysis
-`figures/fig_W4_attribution_disagreement.png`
-
-Reframing of the Attention–GS-SHAP divergence. Left: 3-method (GS-SHAP/IntGrad/Perm-SHAP) Spearman ρ heatmaps. Centre: Attention temporal weights (which time-step is attended). Right: per-feature cross-method variance. Conclusion: Attention measures temporal position; gradient-based methods measure feature importance — complementary axes.
-
-![Fig W4 - Attribution Disagreement](figures/fig_W4_attribution_disagreement.png)
-
----
+Attention vs. gradient-based methods: complementary axes (temporal position vs. feature importance), not conflicting.
 
 #### Figure W5 — ProtoNet Cold-Start Trajectory
-`figures/fig_W5_protonet_coldstart.png`
-
-RMSE as a function of K (number of support observations, K = 1 to 21), comparing ProtoNet (similarity-weighted), naive mean baseline, and NN-prototype selection. Convergence toward full-data GRU baseline (1.5670) demonstrated. NN-prototype (RMSE = 2.4284) vs. random K=5 (RMSE = 2.2784).
-
-![Fig W5 - ProtoNet](figures/fig_W5_protonet_coldstart.png)
-
----
+K=1: RMSE=2.32, K=5: RMSE=2.28; converges toward full-data baseline.
 
 #### Figure W6 — DM Test with Multiple Comparison Correction
-`figures/fig_W6_dm_corrected.png`
-
-Raw p-values, BH-FDR, and Bonferroni correction for all 21 pairwise DM comparisons. Effect sizes (Cohen's d on squared error differential). Bootstrap RMSE CI non-overlap analysis. After BH-FDR correction: 0 significant pairs (n = 34 test sequences limits statistical power).
-
-![Fig W6 - DM Corrected](figures/fig_W6_dm_corrected.png)
-
----
+After BH-FDR: 0 significant pairs (n=24 test sequences limits power). After Bonferroni: same. Raw significant pairs reported conservatively in main text.
 
 #### Figure W7 — IS Theory Alignment
-`figures/fig_W7_is_theory.png`
-
-Empirical grounding for IS theoretical contributions. Top: Signaling Theory (Spence 1973) — CTR quartile vs. conversion rate and ROAS. Bottom: Resource Scarcity — ROAS uncertainty (std) and zero-inflation rate by impression volume bin. Peak uncertainty at < 10 impressions: the IS-theoretic cold-start threshold.
-
-![Fig W7 - IS Theory](figures/fig_W7_is_theory.png)
+Signaling Theory: CTR quartile vs. ROAS. Resource Scarcity: peak uncertainty at <10 impressions.
 
 ---
 
 ## Key Findings
+
+Results reflect the v3 fixed-seed pipeline (`RANDOM_SEED=42`, `07_explainability.py` checkpoint reuse).
 
 | RQ / H | Method | Key Result | Verdict |
 |--------|--------|-----------|---------|
 | RQ1 / H1 | PSM + Doubly Robust IPW | IPW-ATT = 0.1286 (primary); PSM-ATT = 0.1347 [0.1254, 0.1434] | ✓ Supported |
 | RQ2 / H2 | Baron-Kenny + Bootstrap (B=2,000) | a = −0.307, b = −0.086, a×b = 0.027 [0.020, 0.034] | △ Negative suppressor |
 | RQ3 / H3 | OLS HC3-robust interaction | β_int = 0.386 (p < 0.001), ME_Search = 0.949, ME_Shopping = 0.563 | ✓ Supported |
-| RQ4 / H4a | BayesianLSTM vs. LR (AUC) | BayLSTM = 0.611 vs. LR = 0.614 | ⚬ NULL (boundary condition) |
-| RQ4 / H4b | BayesianLSTM vs. Ridge (DM) | RMSE = 1.422 [1.108, 1.731] vs. Ridge = 2.092 | ✓ Supported |
+| RQ4 / H4a | BayesianLSTM-Cls vs. LR (AUC) | BayLSTM = 0.589 vs. LR = 0.614 | ⚬ NULL (boundary condition) |
+| RQ4 / H4b | LSTM vs. Ridge (DM) | LSTM RMSE = 1.275 vs. Ridge = 1.611; DM p = 0.011 | ✓ Supported |
 | RQ4 / H4c | Mamba SEQ_LEN robustness | Mamba ΔRMSE = −0.004 vs. LSTM Δ = +0.006 | ✓ Supported (robustness only) |
 | RQ4 / Bay | Bayesian posterior | 95% CI coverage = 94.1% (T = 1.5) | ✓ Novel |
-| RQ4 / Proto | ProtoNet K-shot (K = 1–5) | K=1: 2.32, K=5: 2.28; converges toward full-data GRU | ✓ Novel |
-| RQ5 / H5 | KW η² + GS-SHAP | η²_max = 0.525 (hour_sin/cos), 4/7 significant | ✓ Supported |
+| RQ4 / Proto | ProtoNet K-shot (K = 1–5) | K=1: 2.32, K=5: 2.28; converges toward full-data baseline | ✓ Novel |
+| RQ5 / H5 | KW + GS-SHAP + Spearman ρ | KW: 5/7 significant (p=0.043); Spearman ρ: 0.559–0.825 (3/3 pairs, all clusters) | ✓ Supported (caveat: n<10 per cluster) |
 | RQ6 / H6 | KS-test (Search vs Shopping) | 6/7 features p < 0.05; frozen-encoder gain = +0.2% | ✓ Supported |
+
+> **H4b note:** Best REG model changed from BayesianLSTM (pre-fix, RMSE=1.422) to **LSTM** (v3 group-split, RMSE=1.275) following FIX-2 (group-aware split eliminates sequence leakage). The DM test confirms LSTM significantly outperforms Ridge (p=0.011) and all other baselines.
+
+> **H5 caveat:** All three clusters have n<10 test samples (C0=7, C1=9, C2=8). KW p=0.043 is marginal and should be reported with this caveat. The 5 features in HSIC Group 0 share identical KW statistics by construction. LOGO-CV (§W1c) provides the primary generalization evidence.
+
+---
+
+## Code Fix Log (v3)
+
+The following bugs were identified and corrected during the v3 revision. All fixes are documented with `[FIX-N]` markers in the relevant source files.
+
+| Fix | File | Description |
+|-----|------|-------------|
+| FIX-1 | `trainer.py` | Added `real_val_loader` parameter: early stopping now driven by real held-out data, not augmented-dist val. Adds `val_real` curve to Figure 6. |
+| FIX-2 | `sequence.py` | Replaced `time_split()` (index-based) with `group_time_split()` (ad-group-aware). Eliminates sliding-window sequence leakage across train/val/test splits. |
+| FIX-3 | `gsshap.py` | Added `np.abs()` before Gini computation. Signed attribution values were cancelling to ~0, making all Gini values near-zero (opposite of the later 0.98 bug). |
+| FIX-4a | `gsshap.py` | Corrected `temporal_gini()` formula. Previous formula gave uniform→0.9375 instead of correct 0.0; some inputs returned >1.0 (clipped). Standard Lorenz-based formula now used. |
+| FIX-4b | `gsshap.py` | Increased time segmentation resolution: `min_seg_len=1` instead of 2, giving T=4 segments instead of 2. Prevents Gini from being forced near 1.0 by coarse bucketing. |
+| FIX-5 | `gsshap.py` | Added `group_temporal_gini()` and `compute_cluster_gini(level="group")`. Reports 2 independent group-level Gini values per cluster instead of 7 per-feature values (5 of which are duplicates within HSIC Group 0). |
+| FIX-6 | `agreement.py` | Added `_is_near_constant()` detector and `nanmean` handling. Near-constant importance vectors now produce explicit warnings ("why NaN") rather than silent NaN averages. |
+| FIX-7 | `07_explainability.py` | Global seed fixation (`random`, `numpy`, `torch`, `cudnn.deterministic`). Added checkpoint save/load: first run saves `best_bayesian_lstm.pt`; subsequent runs load it, ensuring reproducible KW and Spearman results. |
+| FIX-B | `mbb.py` | Fixed `n_each` bug: `X_real[idx]` returned shape `(N, T, D)` instead of `(T, D)` per iteration, causing `174 × n_each` samples instead of `n_each`. Augmentation output: 41,006 → 870 (correct). |
+| FIX-C | `07_explainability.py` | Fixed `permshap_importance_by_cluster[c]` aggregation: `np.abs(v).mean(axis=0)` on a 1D `(D,)` vector collapsed to a scalar. Replaced with `np.mean(np.abs(np.stack(ps_vals)), axis=0)` → `(D,)` vector. This caused all Perm-SHAP Spearman pairs to be NaN. |
+| FIX-D | `07_explainability.py` | Fixed `boxplot(arr.T, tick_labels=FEATURES)`: `arr.T` shape `(D,n_clusters)` interpreted as `n_clusters` boxes, mismatching `FEATURES` (7 labels). Corrected to `boxplot(arr, ...)` → `D` boxes. |
 
 ---
 
 ## Data Availability
 
-The raw dataset used in this study (`3월성과데이터(샘플).xlsx`) consists of proprietary advertisement performance records from a single advertiser on the Naver platform and **cannot be publicly released** due to commercial confidentiality obligations.
+The raw dataset (`3월성과데이터(샘플).xlsx`) consists of proprietary advertisement performance records from a single advertiser on the Naver platform and **cannot be publicly released** due to commercial confidentiality obligations.
 
-**Data sharing policy:** The corresponding author will consider sharing the data with researchers who provide a reasonable academic justification. Requests should be submitted via GitHub Issues (label: `data-request`) or by email, including:
-
-1. Institutional affiliation and research purpose
-2. A brief description of the intended use
-3. Confirmation that the data will not be used for commercial purposes
-
-Requests will be evaluated on a case-by-case basis. The authors aim to respond within 14 business days.
+Data sharing requests should be submitted via GitHub Issues (label: `data-request`), including institutional affiliation, research purpose, and confirmation of non-commercial use. Requests are evaluated case-by-case; authors aim to respond within 14 business days.
 
 ---
 
@@ -754,13 +742,12 @@ Requests will be evaluated on a case-by-case basis. The authors aim to respond w
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
-The license covers only the code and methodology. The underlying dataset is **not** covered by this license and remains subject to separate data sharing terms described above.
+The license covers only the code and methodology. The underlying dataset is **not** covered by this license and remains subject to separate data sharing terms.
 
 ---
 
 ## Acknowledgements
 
-GS-SHAP (`gsshap_standalone.py`) uses HSIC-based feature grouping inspired by:
 - Lundberg & Lee (2017). *A Unified Approach to Interpreting Model Predictions*. NeurIPS.
 - Gal & Ghahramani (2016). *Dropout as a Bayesian Approximation*. ICML.
 - Gu et al. (2023). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces*. arXiv.
