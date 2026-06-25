@@ -231,19 +231,40 @@ def main():
         print(f"  {CLUSTER_NAMES[c]}: {parts}")
 
     # ── [2/4] Integrated Gradients ───────────────────────────────────
-    # NOTE: intgrad.py / permshap.py were not reviewed against the same
-    # device-mismatch issue fixed above for GSSHAP. If either raises the
-    # same "Input and parameter tensors are not at the same device" error,
-    # the fix is the same: ensure any internally-constructed tensors use
-    # `next(model.parameters()).device` (or DEVICE from sadaf.config)
-    # rather than defaulting to CPU.
+    # NOTE (reviewed against actual intgrad.py / permshap.py source):
+    #   - permutation_shap() is safe as-is: it resolves
+    #     `device = next(model.parameters()).device` when not given, so
+    #     it always matches wherever `model` currently lives.
+    #   - integrated_gradients() temporarily moves `model` itself (not a
+    #     copy — nn.Module.cpu()/.to() mutate and return the same object)
+    #     to CPU, runs the IG loop in train() mode to keep MC-Dropout
+    #     active, then moves it back to its original device and restores
+    #     eval()/train() mode at the end of the function body. This is
+    #     fine when the function returns normally. The risk is if an
+    #     exception is raised mid-loop (e.g. a CUDA OOM from a concurrent
+    #     process, a NaN, a KeyboardInterrupt): the restore lines never
+    #     run, and `model` would be left on CPU with stale .grad values
+    #     from the last backward() call, breaking the subsequent
+    #     permutation_shap() / GSSHAP calls below with the same device
+    #     mismatch fixed earlier for GSSHAP. Wrapping the call site in
+    #     try/finally below guarantees model.to(DEVICE) is re-applied
+    #     and stray gradients are cleared even if integrated_gradients()
+    #     raises partway through a cluster's sample loop.
     print("\n  [2/4] Integrated Gradients ...")
     intgrad_importance_by_cluster = {}
-    for c in range(n_clusters):
-        idxs = np.where(cluster_labels == c)[0]
-        ig_vals = [integrated_gradients(model, Xte[i]) for i in idxs]
-        intgrad_importance_by_cluster[c] = np.mean(
-            [np.abs(v).mean(axis=0) for v in ig_vals], axis=0)
+    try:
+        for c in range(n_clusters):
+            idxs = np.where(cluster_labels == c)[0]
+            ig_vals = [integrated_gradients(model, Xte[i]) for i in idxs]
+            intgrad_importance_by_cluster[c] = np.mean(
+                [np.abs(v).mean(axis=0) for v in ig_vals], axis=0)
+    finally:
+        # Defensive: integrated_gradients() should already have restored
+        # model's device/mode on normal return, but re-assert it here in
+        # case an exception interrupted that restore for any sample.
+        model.to(DEVICE)
+        model.zero_grad(set_to_none=True)
+        model.eval()
 
     # ── [3/4] Permutation SHAP ───────────────────────────────────────
     print("\n  [3/4] Permutation SHAP ...")
