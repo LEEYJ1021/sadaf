@@ -182,7 +182,7 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
     # Augmentation
     X_aug, Y_aug = augment_pipeline(
         Xtr.astype(np.float32), Ytr.astype(np.float32),
-        target_n=max(target_n, len(Xtr) * 5), ref_lstm=ref_gru)
+        target_n=max(target_n, len(Xtr) * 5), ref_model=ref_gru)
 
     # Normalise
     sc = MinMaxScaler()
