@@ -373,15 +373,19 @@ def _plot_figure9(importance_by_cluster, gini_group_by_cluster, gfm,
 
     ax = axes[0]
     data = [importance_by_cluster[c] for c in range(n_clusters)]
-    arr = np.array(data)          # expected (n_clusters, D)
-    # Guard against shape mismatch: if importance vectors have fewer dims
-    # than FEATURES (e.g. group-level instead of feature-level), derive
-    # tick_labels from the actual column count rather than assuming D=7.
+    arr = np.array(data)          # (n_clusters, D) e.g. (3, 7)
+    # matplotlib boxplot(X): columns of X become individual boxes.
+    # arr has shape (n_clusters, D) — passing it directly gives D boxes,
+    # each containing n_clusters values (one per cluster). That is the
+    # intended layout: one box per feature, coloured by cluster spread.
+    # [BUG-FIX] The previous version passed arr.T → shape (D, n_clusters),
+    # which matplotlib interpreted as n_clusters boxes (3) while
+    # tick_labels=FEATURES had 7 entries → ValueError: dimensions mismatch.
     n_cols = arr.shape[1] if arr.ndim == 2 else len(FEATURES)
     plot_labels = FEATURES if n_cols == len(FEATURES) else [f"group{i}" for i in range(n_cols)]
     # NOTE: matplotlib renamed Axes.boxplot()'s `labels` kwarg to
     # `tick_labels` (removed in this environment's matplotlib 3.10.8).
-    ax.boxplot(arr.T, tick_labels=plot_labels)
+    ax.boxplot(arr, tick_labels=plot_labels)    # arr NOT transposed
     ax.set_title("GS-SHAP mean |attribution| by feature")
     ax.tick_params(axis='x', rotation=45)
 
