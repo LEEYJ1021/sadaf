@@ -81,7 +81,9 @@ SADAF is organized around six research questions (RQ), each mapped to empiricall
 ---
 
 ### RQ5 — Cluster-Specific Attribution Explanation
-**H5:** Ad group clusters exhibit statistically distinct feature attribution patterns (measured by Kruskal-Wallis η²), and multiple attribution methods (GS-SHAP, Integrated Gradients, Permutation-SHAP, Attention) produce convergent rankings for three gradient-based methods.
+**H5:** Ad group clusters exhibit statistically distinct feature attribution patterns across HSIC-defined feature groups (measured by Kruskal-Wallis η²), and multiple attribution methods (GS-SHAP, Integrated Gradients, Permutation-SHAP) produce convergent rankings.
+
+> **Note on GS-SHAP group structure:** GS-SHAP decomposes attribution at the HSIC group level, not the individual feature level. Group 0 = {CTR, CVR, Depth, log_cost, log_impression}; Group 1 = {hour_sin, hour_cos}. All features within a group receive identical attribution values by construction. Consequently, Kruskal-Wallis tests across clusters effectively compare 2 independent group-level distributions (not 7 per-feature distributions). Attention weights measure temporal position (which time-step matters), not feature importance, and are therefore excluded from the gradient-method consensus analysis.
 
 *Method: KMeans clustering + GS-SHAP (primary) + three additional attribution methods + Spearman ρ agreement matrix*
 
@@ -326,7 +328,7 @@ sadaf/
 │   ├── fig_08_gsshap_heatmaps.png
 │   ├── fig_08b_multi_attribution.png
 │   ├── fig_08c_agreement.png
-│   ├── fig_09_gsshap_importance.png
+│   ├── fig_09_gsshap_importance_fixed.png
 │   ├── fig_09b_rank_consensus.png
 │   ├── fig_10_cluster_profile.png
 │   ├── fig_11_domain_shift.png
@@ -544,7 +546,7 @@ RMSE vs. sequence length (4 → 6) with 95% bootstrap CI. Mamba ΔRMSE = −0.00
 #### Figure 8 — GS-SHAP Temporal Attribution Heatmaps (H5)
 `figures/fig_08_gsshap_heatmaps.png`
 
-Cluster-level GS-SHAP attribution maps. HSIC grouping: Group 0 = {CTR, CVR, Depth, log_cost, log_impression}; Group 1 = {hour_sin, hour_cos}. Note: per-feature attribution values within each HSIC group are identical by construction (group-level Shapley decomposition). Two independent Gini values exist per cluster (one per group), not seven.
+Cluster-level GS-SHAP attribution maps. HSIC grouping: Group 0 = {CTR, CVR, Depth, log_cost, log_impression}; Group 1 = {hour_sin, hour_cos}. Per-feature attribution values within each HSIC group are identical by construction (group-level Shapley decomposition). The heatmap therefore shows 2 independent attribution levels per cluster, not 7. Temporal Gini is computed at the group level (2 values per cluster).
 
 > **⚠ Figure requires regeneration** — pre-fix heatmap used incorrect Gini formula.
 
@@ -553,7 +555,7 @@ Cluster-level GS-SHAP attribution maps. HSIC grouping: Group 0 = {CTR, CVR, Dept
 #### Figure 8b — Multi-Method Attribution Comparison
 `figures/fig_08b_multi_attribution.png`
 
-Side-by-side comparison of GS-SHAP, Integrated Gradients, Permutation SHAP, and Attention-based attribution across all three clusters.
+Side-by-side comparison of GS-SHAP, Integrated Gradients, Permutation SHAP, and Attention-based attribution across all three clusters. Note: Attention weights are shown for reference only — they measure temporal position (which time-step matters), not feature-level importance, and are excluded from the Spearman ρ consensus computation.
 
 > **⚠ Figure requires regeneration** — pre-fix Perm-SHAP importance vectors were scalar (aggregation bug), making all features appear equally important.
 
@@ -562,15 +564,13 @@ Side-by-side comparison of GS-SHAP, Integrated Gradients, Permutation SHAP, and 
 #### Figure 8c — Method Agreement Heatmap (Spearman ρ)
 `figures/fig_08c_agreement.png`
 
-Spearman rank correlation among attribution methods per cluster (v3 fixed-seed results):
+Spearman rank correlation among the three gradient-based attribution methods (GS-SHAP, IntGrad, Perm-SHAP) per cluster (v3 fixed-seed results). Attention is excluded from this consensus matrix because it operates on a different axis (temporal position vs. feature importance).
 
-| Cluster | Avg Spearman ρ | Pairs usable |
-|---------|---------------|--------------|
+| Cluster | Avg Spearman ρ (3 gradient methods) | Pairs usable |
+|---------|-------------------------------------|--------------|
 | C0 High-Volume | 0.825 | 3/3 |
 | C1 High-Conversion | 0.559 | 3/3 |
 | C2 Click-Rich | 0.813 | 3/3 |
-
-Attention excluded from consensus (measures temporal position, not feature importance).
 
 > **⚠ Figure requires regeneration** — pre-fix figure showed NaN for all Perm-SHAP pairs.
 
@@ -579,9 +579,11 @@ Attention excluded from consensus (measures temporal position, not feature impor
 #### Figure 9 — Feature Importance & Temporal Gini (H5)
 `figures/fig_09_gsshap_importance_fixed.png`
 
-GS-SHAP attribution boxplots by cluster. Kruskal-Wallis results (v3): 5/7 features significant (p = 0.043). Note: the 5 features in Group 0 share identical KW statistics by construction of the group-level decomposition.
+GS-SHAP attribution boxplots by cluster, separated by C0 / C1 / C2 for visual comparison. Because GS-SHAP operates at the HSIC group level, all features within Group 0 (CTR, CVR, Depth, log_cost, log_impression) share identical attribution values; the 5 boxes for these features are structurally identical and reflect a single group-level Shapley value, not independent per-feature scores.
 
-Temporal Gini (group-level, corrected formula):
+Kruskal-Wallis test across clusters compares 2 independent group-level distributions (Group 0 vs. Group 1). Result (v3): Group 1 (hour_sin/cos) significantly differs from Group 0 across clusters (p = 0.043). Reporting "5/7 features significant" is a mischaracterisation of the GS-SHAP decomposition and should be avoided.
+
+Temporal Gini (group-level, corrected Lorenz formula, per cluster):
 
 | Cluster | Group 0 (CTR/CVR/Depth/cost/impression) | Group 1 (hour_sin/cos) |
 |---------|----------------------------------------|------------------------|
@@ -589,23 +591,23 @@ Temporal Gini (group-level, corrected formula):
 | C1 High-Conversion | 0.280 | 0.342 |
 | C2 Click-Rich | 0.373 | 0.290 |
 
-> **⚠ Figure requires regeneration** — pre-fix figure used incorrect Gini formula (uniform→0.9375 instead of 0.0) and showed near-identical values ~0.98 across all features. The corrected figure is saved as `fig_09_gsshap_importance_fixed.png`.
+> **⚠ Figure requires regeneration** — pre-fix figure used incorrect Gini formula (uniform→0.9375 instead of 0.0), showed near-identical values ~0.98 across all features, aggregated all clusters into a single boxplot, and displayed raw `np.int64` arrays as x-axis labels. The corrected figure (`fig_09_gsshap_importance_fixed.png`) uses cluster-separated boxplots and human-readable group labels.
 
 ---
 
 #### Figure 9b — Rank Consensus Heatmap
 `figures/fig_09b_rank_consensus.png`
 
-Feature rank (1 = most important) from each attribution method per cluster.
+Feature rank (1 = most important) from each of the three gradient-based attribution methods (GS-SHAP, IntGrad, Perm-SHAP) per cluster. Attention ranks are shown in a separate panel to avoid conflating temporal-position ranks with feature-importance ranks.
 
-> **⚠ Figure requires regeneration** — pre-fix Perm-SHAP ranks were meaningless (scalar aggregation bug).
+> **⚠ Figure requires regeneration** — pre-fix Perm-SHAP ranks were meaningless (scalar aggregation bug, FIX-C).
 
 ---
 
 #### Figure 10 — Cluster Profiling: Radar + ROAS Violin
 `figures/fig_10_cluster_profile.png`
 
-Input feature radar chart (normalised), GS-SHAP attribution radar, and ROAS distribution violin plots by cluster.
+Input feature radar chart (normalised), GS-SHAP group-level attribution radar (2 axes: Group 0 and Group 1), and ROAS distribution violin plots by cluster. Kruskal-Wallis confirms significant inter-cluster ROAS differences (p < 0.0001).
 
 ---
 
@@ -626,7 +628,7 @@ Precision-Recall curves for all classifiers. H4a NULL: BayesianLSTM-Cls (AUC=0.5
 #### Figure 13 — Diebold-Mariano Test Results
 `figures/fig_13_dm_test.png`
 
-Significant DM comparisons (v3):
+Significant DM comparisons (v3, best REG model = LSTM):
 
 | Pair | DM stat | p-value | Winner |
 |------|---------|---------|--------|
@@ -640,9 +642,9 @@ Significant DM comparisons (v3):
 | GRU vs Ridge | −2.553 | 0.018 | GRU |
 | GRU vs MLP | −3.324 | 0.003 | GRU |
 
-Note: After BH-FDR correction (W6), 0 pairs remain significant due to n=24 test sequences.
+Note: After BH-FDR correction (W6), 0 pairs remain significant due to n=24 test sequences. Raw p-values reported conservatively in the main text.
 
-> **⚠ Figure requires regeneration** — pre-fix figure reflected different best-model ordering.
+> **⚠ Figure requires regeneration** — pre-fix figure reflected BayesianLSTM as best model; v3 results show LSTM.
 
 ---
 
@@ -662,7 +664,7 @@ MBB: mean KS = 0.011, MMD = 0.0056. β-VAE: mean KS = 0.404 (captures nonlinear 
 GRU RMSE vs. real training data fraction (20%–100%), power-law fit.
 
 #### Figure W1c — Leave-One-Ad-Group-Out CV
-LOGO-CV RMSE: mean = 1.2041 ± 0.5976 across 37 ad groups. Lower than hold-out RMSE, supporting generalization to unseen ad groups.
+LOGO-CV RMSE: mean = 1.2041 ± 0.5976 across 37 ad groups. Lower than hold-out RMSE, supporting generalization to unseen ad groups. This provides the primary generalization evidence for H5, supplementing the small within-cluster test set sizes (C0=7, C1=9, C2=8).
 
 #### Figure W2a — Temporal Stability
 Hour-block CV: std(RMSE) = 0.38 (moderate temporal variability).
@@ -674,7 +676,7 @@ Pre-trained GRU evaluated on five simulated advertiser distributions.
 Optimal: dropout=0.4, weight_decay=1e-3 (GRU RMSE = 1.3777).
 
 #### Figure W4 — Attribution Method Disagreement Analysis
-Attention vs. gradient-based methods: complementary axes (temporal position vs. feature importance), not conflicting.
+Reframing of the Attention–GS-SHAP divergence. Left: 3-method (GS-SHAP/IntGrad/Perm-SHAP) Spearman ρ heatmaps. Centre: Attention temporal weights (which time-step is attended). Right: per-feature cross-method variance. Conclusion: Attention measures temporal position; gradient-based methods measure feature importance — these are complementary, not competing, axes. Spearman ρ consensus is computed only among the three gradient-based methods.
 
 #### Figure W5 — ProtoNet Cold-Start Trajectory
 K=1: RMSE=2.32, K=5: RMSE=2.28; converges toward full-data baseline.
@@ -701,12 +703,12 @@ Results reflect the v3 fixed-seed pipeline (`RANDOM_SEED=42`, `07_explainability
 | RQ4 / H4c | Mamba SEQ_LEN robustness | Mamba ΔRMSE = −0.004 vs. LSTM Δ = +0.006 | ✓ Supported (robustness only) |
 | RQ4 / Bay | Bayesian posterior | 95% CI coverage = 94.1% (T = 1.5) | ✓ Novel |
 | RQ4 / Proto | ProtoNet K-shot (K = 1–5) | K=1: 2.32, K=5: 2.28; converges toward full-data baseline | ✓ Novel |
-| RQ5 / H5 | KW + GS-SHAP + Spearman ρ | KW: 5/7 significant (p=0.043); Spearman ρ: 0.559–0.825 (3/3 pairs, all clusters) | ✓ Supported (caveat: n<10 per cluster) |
+| RQ5 / H5 | KW + GS-SHAP + Spearman ρ | KW: Group 1 (hour_sin/cos) vs. Group 0 significant (p = 0.043); Spearman ρ: 0.559–0.825 across all clusters (3 gradient methods) | ✓ Supported (caveat: n<10 per cluster; 2 group-level KW tests, not 7 per-feature) |
 | RQ6 / H6 | KS-test (Search vs Shopping) | 6/7 features p < 0.05; frozen-encoder gain = +0.2% | ✓ Supported |
 
 > **H4b note:** Best REG model changed from BayesianLSTM (pre-fix, RMSE=1.422) to **LSTM** (v3 group-split, RMSE=1.275) following FIX-2 (group-aware split eliminates sequence leakage). The DM test confirms LSTM significantly outperforms Ridge (p=0.011) and all other baselines.
 
-> **H5 caveat:** All three clusters have n<10 test samples (C0=7, C1=9, C2=8). KW p=0.043 is marginal and should be reported with this caveat. The 5 features in HSIC Group 0 share identical KW statistics by construction. LOGO-CV (§W1c) provides the primary generalization evidence.
+> **H5 caveat:** All three clusters have n<10 test samples (C0=7, C1=9, C2=8). KW p=0.043 is marginal and should be reported with this caveat. GS-SHAP group-level decomposition means the KW test compares 2 independent distributions (Group 0 vs. Group 1), not 7 per-feature distributions. Phrasing such as "5/7 features significant" misrepresents the GS-SHAP structure and should not be used. LOGO-CV (§W1c) provides the primary generalization evidence.
 
 ---
 
@@ -718,15 +720,35 @@ The following bugs were identified and corrected during the v3 revision. All fix
 |-----|------|-------------|
 | FIX-1 | `trainer.py` | Added `real_val_loader` parameter: early stopping now driven by real held-out data, not augmented-dist val. Adds `val_real` curve to Figure 6. |
 | FIX-2 | `sequence.py` | Replaced `time_split()` (index-based) with `group_time_split()` (ad-group-aware). Eliminates sliding-window sequence leakage across train/val/test splits. |
-| FIX-3 | `gsshap.py` | Added `np.abs()` before Gini computation. Signed attribution values were cancelling to ~0, making all Gini values near-zero (opposite of the later 0.98 bug). |
+| FIX-3 | `gsshap.py` | Added `np.abs()` before Gini computation. Signed attribution values were cancelling to ~0, making all Gini values near-zero. |
 | FIX-4a | `gsshap.py` | Corrected `temporal_gini()` formula. Previous formula gave uniform→0.9375 instead of correct 0.0; some inputs returned >1.0 (clipped). Standard Lorenz-based formula now used. |
 | FIX-4b | `gsshap.py` | Increased time segmentation resolution: `min_seg_len=1` instead of 2, giving T=4 segments instead of 2. Prevents Gini from being forced near 1.0 by coarse bucketing. |
-| FIX-5 | `gsshap.py` | Added `group_temporal_gini()` and `compute_cluster_gini(level="group")`. Reports 2 independent group-level Gini values per cluster instead of 7 per-feature values (5 of which are duplicates within HSIC Group 0). |
-| FIX-6 | `agreement.py` | Added `_is_near_constant()` detector and `nanmean` handling. Near-constant importance vectors now produce explicit warnings ("why NaN") rather than silent NaN averages. |
+| FIX-5 | `gsshap.py` | Added `group_temporal_gini()` and `compute_cluster_gini(level="group")`. Reports 2 independent group-level Gini values per cluster instead of 7 per-feature values (5 of which are structural duplicates within HSIC Group 0). |
+| FIX-6 | `agreement.py` | Added `_is_near_constant()` detector and `nanmean` handling. Near-constant importance vectors now produce explicit warnings rather than silent NaN averages. |
 | FIX-7 | `07_explainability.py` | Global seed fixation (`random`, `numpy`, `torch`, `cudnn.deterministic`). Added checkpoint save/load: first run saves `best_bayesian_lstm.pt`; subsequent runs load it, ensuring reproducible KW and Spearman results. |
+| FIX-8 | `10_figures.py` | Fixed x-axis labels in Temporal Gini boxplot: replaced raw `np.int64` group-index arrays with human-readable strings `"Group 0 (CTR/CVR/Depth/cost/imp)"` and `"Group 1 (hour_sin/cos)"`, separated by cluster (C0/C1/C2). |
 | FIX-B | `mbb.py` | Fixed `n_each` bug: `X_real[idx]` returned shape `(N, T, D)` instead of `(T, D)` per iteration, causing `174 × n_each` samples instead of `n_each`. Augmentation output: 41,006 → 870 (correct). |
 | FIX-C | `07_explainability.py` | Fixed `permshap_importance_by_cluster[c]` aggregation: `np.abs(v).mean(axis=0)` on a 1D `(D,)` vector collapsed to a scalar. Replaced with `np.mean(np.abs(np.stack(ps_vals)), axis=0)` → `(D,)` vector. This caused all Perm-SHAP Spearman pairs to be NaN. |
 | FIX-D | `07_explainability.py` | Fixed `boxplot(arr.T, tick_labels=FEATURES)`: `arr.T` shape `(D,n_clusters)` interpreted as `n_clusters` boxes, mismatching `FEATURES` (7 labels). Corrected to `boxplot(arr, ...)` → `D` boxes. |
+
+---
+
+## Figures Requiring Update
+
+The following figures were generated by the pre-fix pipeline and must be regenerated before submission:
+
+| Figure | Issue | Fix Applied |
+|--------|-------|-------------|
+| `fig_05_model_comparison.png` | BayesianLSTM shown as best REG model; v3 best is LSTM | FIX-2 (group-aware split) |
+| `fig_06_learning_curves.png` | Only 2 curves (train + val_aug); missing val_real | FIX-1 |
+| `fig_08_gsshap_heatmaps.png` | Incorrect Gini formula | FIX-4a/4b |
+| `fig_08b_multi_attribution.png` | Perm-SHAP scalar aggregation bug | FIX-C |
+| `fig_08c_agreement.png` | All Perm-SHAP Spearman pairs NaN | FIX-C, FIX-6 |
+| `fig_09_gsshap_importance_fixed.png` | Incorrect Gini formula; all clusters merged; x-axis shows raw np.int64 arrays; cluster separation missing | FIX-4a/4b/5, FIX-8, FIX-D |
+| `fig_09b_rank_consensus.png` | Perm-SHAP ranks meaningless (scalar bug) | FIX-C |
+| `fig_13_dm_test.png` | Reflects BayesianLSTM as best model; v3 winner is LSTM | FIX-2 |
+
+Run `python scripts/10_figures.py` after applying all fixes to regenerate.
 
 ---
 
