@@ -324,8 +324,25 @@ def main():
             print(f"  [DIAGNOSTIC] C0 sample 0 raw importances: "
                   f"{np.array2string(first_imp, precision=6, suppress_small=True)}")
             print(f"    std={first_imp.std():.2e}  max={first_imp.max():.2e}")
+        # [BUG-FIX] permutation_shap() returns (D,) — a 1D importance vector.
+        # The previous line was:
+        #   np.mean([np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
+        # For a 1D v of shape (D,), abs().mean(axis=0) collapses D values
+        # into a single scalar (mean over the feature axis) rather than
+        # preserving the per-feature vector. The list therefore contained
+        # n_cluster scalars, and np.mean() of that list was still a scalar —
+        # so permshap_importance_by_cluster[c] ended up as a 0-D array
+        # (same value broadcast to all "features"). agreement.py then saw
+        # std ≈ 0 across features and flagged it as near-constant, dropping
+        # Perm-SHAP from all Spearman comparisons.
+        #
+        # GS-SHAP and IntGrad escape this because their per-sample objects
+        # are (T, D) cell_maps — abs().mean(axis=0) on a 2D array averages
+        # over T and keeps D, correctly yielding a (D,) vector.
+        #
+        # Fix: stack the (D,) vectors into (n_samples, D) and mean over axis=0.
         permshap_importance_by_cluster[c] = np.mean(
-            [np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
+            np.abs(np.stack(ps_vals)), axis=0)   # (n_samples, D) → (D,)
 
     # ── [4/4] Attention-based attribution (excluded from consensus) ─
     print("\n  [4/4] Attention-based Attribution ...")
