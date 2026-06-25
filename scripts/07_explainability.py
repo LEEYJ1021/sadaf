@@ -1,5 +1,5 @@
 """
-07_explainability.py  [FIXED v2]
+07_explainability.py  [FIXED v2 — patch applied]
 ----------------------------------
 Multi-method attribution comparison (H5):
 GS-SHAP (primary), Integrated Gradients, Permutation SHAP, Attention.
@@ -18,6 +18,13 @@ FIX-3  (Temporal Gini blank in Figure 9):
     sample per feature) are produced and printed.
   - A plot_figure9() function generates the corrected Figure 9 with a
     populated right panel.
+
+PATCH (2025-06):
+  - REMOVED duplicate/wrong import:
+      from sadaf.training.trainer import train_model, eval_reg, SeqDataset
+    SeqDataset is correctly imported from sadaf.data.sequence (line 44).
+    trainer only exports train_model + eval_reg.
+  - FIXED ref_lstm= → ref_model= in augment_pipeline() call (line ~147).
 
 Usage:
     python scripts/07_explainability.py --data_path data/3월성과데이터(샘플).xlsx
@@ -52,7 +59,8 @@ from sadaf.explainability.gsshap import (GSSHAP,
                                           compute_cluster_gini)  # [FIX-3]
 from sadaf.explainability.intgrad import integrated_gradients
 from sadaf.explainability.permshap import permutation_shap
-from sadaf.training.trainer import train_model, eval_reg, SeqDataset
+# PATCH: removed wrong 'SeqDataset' import from trainer — it lives in sadaf.data.sequence
+from sadaf.training.trainer import train_model, eval_reg
 
 warnings.filterwarnings("ignore")
 
@@ -119,7 +127,7 @@ def plot_figure9(
         data_mat = feat_imp_gs.get(ci, np.zeros((1, n_feat)))  # (n_samples, D)
         for fi in range(n_feat):
             col_data = data_mat[:, fi]
-            bp = ax.boxplot(
+            ax.boxplot(
                 col_data,
                 positions=[positions_per_feat[fi] + offsets[ci]],
                 widths=width * 0.85,
@@ -225,9 +233,10 @@ def main():
         DataLoader(SeqDataset(Xva_n0, Yva), batch_size=bs0),
         epochs=50, patience=8)
 
+    # PATCH: ref_lstm= → ref_model= (matches augment_pipeline signature)
     X_aug, Y_aug = augment_pipeline(
         Xtr.astype(np.float32), Ytr.astype(np.float32),
-        target_n=max(args.target_n, len(Xtr) * 5), ref_lstm=ref_gru)
+        target_n=max(args.target_n, len(Xtr) * 5), ref_model=ref_gru)
 
     sc = MinMaxScaler()
     N_a, T_a, D_a = X_aug.shape
@@ -260,8 +269,8 @@ def main():
     print("\n  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3] ...")
     explainer = load_gsshap_explainer(explain_model, X_aug_n)
 
-    feat_imp_gs        = {c: [] for c in range(3)}   # list of (D,) arrays
-    cell_maps_by_cluster = {c: [] for c in range(3)} # list of (T,D) arrays
+    feat_imp_gs          = {c: [] for c in range(3)}   # list of (D,) arrays
+    cell_maps_by_cluster = {c: [] for c in range(3)}   # list of (T,D) arrays
 
     for c in range(3):
         cand      = np.where(te_labels == c)[0]
