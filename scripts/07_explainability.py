@@ -217,8 +217,9 @@ def main():
 
     # [FIX-2] unpack group_ids
     # PATCH: keyword argument order fixed — features= must come after seq_len=
+    # 올바른 상태
     X_reg, Y_reg, gids_reg = build_sequences(
-        df_roas, "log_ROAS", seq_len=4, features=FEATURES)
+    df_roas, "log_ROAS", seq_len=4, features=FEATURES)   # ← keyword 인수로 이동
 
     # [FIX-2] group-aware split
     (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = group_time_split(
