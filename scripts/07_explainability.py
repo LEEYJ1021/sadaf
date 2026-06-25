@@ -30,6 +30,7 @@ FIX-6 (sadaf/explainability/agreement.py):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -40,6 +41,7 @@ import matplotlib.pyplot as plt
 from scipy import stats as scipy_stats
 from sklearn.cluster import KMeans
 
+from sadaf.config import DEVICE
 from sadaf.data.loader import load_and_preprocess
 from sadaf.data.sequence import build_sequences, group_time_split
 from sadaf.augmentation.pipeline import augment_pipeline
@@ -102,7 +104,29 @@ def main():
     print(f"  Split sizes — train:{len(Xtr)}  val:{len(Xva)}  test:{len(Xte)}")
 
     # ── Train a reference BayesianLSTM for attribution ─────────────
+    # [DIAGNOSTIC] A prior run showed "Augmentation: ..." printed TWICE
+    # with a very different target_n (870, then ~41180) despite this
+    # script calling augment_pipeline() exactly once at this line. Since
+    # the cause could not be confirmed from logs alone, this call is now
+    # wrapped with explicit before/after markers so that if a second
+    # invocation is happening from somewhere else (e.g. a stale process,
+    # a second cell still running, or an unexpected import-time side
+    # effect), it will be unambiguous in the next run's logs.
+    print(f"  [DIAGNOSTIC] augment_pipeline call site: 07_explainability.py "
+          f"main(), target_n=870, len(Xtr)={len(Xtr)}, pid={os.getpid()}")
     X_aug, Y_aug = augment_pipeline(Xtr, Ytr, target_n=870)
+    print(f"  [DIAGNOSTIC] augment_pipeline returned: "
+          f"len(X_aug)={len(X_aug)} (expected ~870)")
+    if len(X_aug) > 1000:
+        print(
+            "  [DIAGNOSTIC] ⚠ X_aug is far larger than the target_n=870 "
+            "requested at this call site. This means augment_pipeline() "
+            "is being invoked again somewhere else with a much larger "
+            "target_n (likely AUG_TARGET_N from config.py, used with no "
+            "override). Call stack at this point:"
+        )
+        import traceback
+        traceback.print_stack()
     print(f"  Augmentation: {len(Xtr)} → ~{len(Xtr)+len(X_aug)} "
           f"(+{len(X_aug)} per method)")
 
@@ -148,7 +172,14 @@ def main():
 
     # ── [1/4] GS-SHAP ────────────────────────────────────────────────
     print("\n  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3/4a/4b] ...")
-    explainer = GSSHAP(model, Xtr, task="reg")
+    # NOTE: GSSHAP defaults to device=torch.device("cpu") if not given
+    # explicitly. The model was already moved to DEVICE (cuda:0 if
+    # available) inside train_model(), so GSSHAP's internal _predict()
+    # must use the *same* device for its input tensors, or torch raises
+    # "Input and parameter tensors are not at the same device". Passing
+    # device=DEVICE here keeps GSSHAP's tensors and the model's
+    # parameters on the same device.
+    explainer = GSSHAP(model, Xtr, task="reg", device=DEVICE)
     gfm = group_feature_map(explainer.players)
     print(f"  [Reporting] HSIC groups → raw features: {gfm}")
     print(f"  [Reporting] {len(gfm)} independent group-level Gini values "
@@ -200,6 +231,12 @@ def main():
         print(f"  {CLUSTER_NAMES[c]}: {parts}")
 
     # ── [2/4] Integrated Gradients ───────────────────────────────────
+    # NOTE: intgrad.py / permshap.py were not reviewed against the same
+    # device-mismatch issue fixed above for GSSHAP. If either raises the
+    # same "Input and parameter tensors are not at the same device" error,
+    # the fix is the same: ensure any internally-constructed tensors use
+    # `next(model.parameters()).device` (or DEVICE from sadaf.config)
+    # rather than defaulting to CPU.
     print("\n  [2/4] Integrated Gradients ...")
     intgrad_importance_by_cluster = {}
     for c in range(n_clusters):
