@@ -41,12 +41,29 @@ import matplotlib.pyplot as plt
 from scipy import stats as scipy_stats
 from sklearn.cluster import KMeans
 
-from sadaf.config import DEVICE
+from sadaf.config import DEVICE, RANDOM_SEED
 from sadaf.data.loader import load_and_preprocess
 from sadaf.data.sequence import build_sequences, group_time_split
 from sadaf.augmentation.pipeline import augment_pipeline
 from sadaf.models.lstm import BayesianLSTM
 from sadaf.training.trainer import train_model
+
+# -- [FIX-7] Global seed fixation -------------------------------------------------
+# KW significance (H5) and Spearman rho varied across runs because BayesianLSTM
+# converged to a different local minimum each time (no seed control).
+# Fixing all RNG sources makes the attribution analysis fully reproducible:
+# same model weights -> same GS-SHAP/IntGrad/Perm-SHAP -> same KW & Spearman.
+import random as _random
+_SEED = RANDOM_SEED if 'RANDOM_SEED' in dir() else 42
+_random.seed(_SEED)
+import numpy as _np_seed; _np_seed.random.seed(_SEED)
+import torch as _torch_seed
+_torch_seed.manual_seed(_SEED)
+_torch_seed.cuda.manual_seed_all(_SEED)
+_torch_seed.backends.cudnn.deterministic = True
+_torch_seed.backends.cudnn.benchmark     = False
+del _random, _np_seed, _torch_seed
+# ---------------------------------------------------------------------------------
 
 from sadaf.explainability.gsshap import (
     GSSHAP,
@@ -79,6 +96,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_path", required=True)
     ap.add_argument("--out_dir", required=True)
+    ap.add_argument("--model_path", default=None,
+                    help="Path to a saved BayesianLSTM .pt checkpoint. "
+                         "If provided, skip training and load this model. "
+                         "If not provided, train from scratch and save to "
+                         "<out_dir>/best_bayesian_lstm.pt for reuse.")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -146,16 +168,33 @@ def main():
         batch_size=32)
 
     model = BayesianLSTM(input_dim=len(FEATURES), hidden=128, dropout=0.4)
-    # NOTE: trainer.py's train_model() signature is
-    #   train_model(model, train_loader, val_loader, epochs=TRAIN_EPOCHS,
-    #               lr=TRAIN_LR, patience=TRAIN_PATIENCE, task="reg",
-    #               weight_decay=TRAIN_WD, verbose=True,
-    #               real_val_loader=None)
-    # There is no `max_epochs` kwarg — that was an incorrect guess in the
-    # previous version of this script and caused a TypeError at runtime.
-    model, history = train_model(
-        model, tr_l, va_l, real_val_loader=real_va_l,
-        epochs=60, patience=12)
+
+    # -- [FIX-7] Model checkpoint save/load -----------------------------------
+    # If <out_dir>/best_bayesian_lstm.pt exists, load it instead of retraining.
+    # This ensures attribution analysis always uses the exact same weights,
+    # eliminating the KW 5/7 <-> 0/7 non-reproducibility across runs.
+    # On first run (no checkpoint), trains with fixed seeds and saves the model.
+    # To force retraining, delete the .pt file before running.
+    _ckpt_path = Path(args.model_path) if args.model_path else (
+        out_dir / "best_bayesian_lstm.pt")
+    if _ckpt_path.exists():
+        print(f"  [FIX-7] Loading saved model from {_ckpt_path}")
+        model.load_state_dict(torch.load(_ckpt_path, map_location=DEVICE))
+        model.to(DEVICE)
+        model.eval()
+        history = {"train": [], "val": [], "val_real": []}
+    else:
+        print(f"  [FIX-7] Training from scratch (seed={_SEED}); "
+              f"will save to {_ckpt_path}")
+        # NOTE: trainer.py train_model() signature:
+        #   train_model(model, train_loader, val_loader, epochs, lr,
+        #               patience, task, weight_decay, verbose, real_val_loader)
+        model, history = train_model(
+            model, tr_l, va_l, real_val_loader=real_va_l,
+            epochs=60, patience=12)
+        torch.save(model.state_dict(), _ckpt_path)
+        print(f"  [FIX-7] Model saved to {_ckpt_path}")
+    # -------------------------------------------------------------------------
 
     print("\n══ H5: Multi-Method Attribution Comparison [FIXED v3] ══")
 
@@ -271,38 +310,6 @@ def main():
 
     # ── [3/4] Permutation SHAP ───────────────────────────────────────
     print("\n  [3/4] Permutation SHAP ...")
-    # [DIAGNOSTIC] Run a quick sanity check on the first test sample to
-    # determine whether model outputs actually vary when features are
-    # permuted. If base_out ≈ all perm_out values (range < 1e-4), Perm-SHAP
-    # importances will all be ≈ 0 regardless of seed — this is a model
-    # sensitivity issue, not a code bug.
-    _diag_sample = Xte[0]
-    _diag_x_t = torch.FloatTensor(_diag_sample).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        _diag_base = float(model(_diag_x_t).item())
-    _diag_perm_outs = []
-    _rng_diag = np.random.default_rng(0)
-    for _ in range(20):
-        _x_p = _diag_sample.copy()
-        _bg = _rng_diag.integers(0, len(Xtr))
-        _x_p[:, 0] = Xtr[_bg, :, 0]  # permute feature 0 only
-        _x_pt = torch.FloatTensor(_x_p).unsqueeze(0).to(DEVICE)
-        with torch.no_grad():
-            _diag_perm_outs.append(float(model(_x_pt).item()))
-    _diag_range = max(_diag_perm_outs) - min(_diag_perm_outs)
-    print(f"  [DIAGNOSTIC] Perm-SHAP sensitivity check (feature 0, n=20 perms):")
-    print(f"    base_out={_diag_base:.6f}  perm_out range={_diag_range:.6f}"
-          f"  (|base - perm| mean={np.mean(np.abs(np.array(_diag_perm_outs)-_diag_base)):.6f})")
-    if _diag_range < 1e-4:
-        print("    ⚠ Model output is insensitive to feature permutation — "
-              "Perm-SHAP importances will be near-zero for all features. "
-              "This is a model saturation / low-signal issue, NOT a code bug. "
-              "Consider: (a) using Xte as background instead of Xtr, "
-              "(b) increasing n_permutations, or (c) reporting Perm-SHAP "
-              "as 'underpowered' for this dataset scale.")
-    else:
-        print("    ✓ Model is sensitive to permutation — Perm-SHAP should work.")
-
     permshap_importance_by_cluster = {}
     for c in range(n_clusters):
         idxs = np.where(cluster_labels == c)[0]
@@ -312,37 +319,14 @@ def main():
         # background-index sequences for every x_sample. This made the
         # importance vectors near-constant across all samples and clusters
         # (std ≈ 0), triggering "near-constant → Spearman undefined" in
-        # agreement.py.  Fix: pass seed=int(i) so each sample draws
+        # agreement.py.  Fix: pass seed=int(idxs[j]) so each sample draws
         # a different background sequence while remaining reproducible.
         ps_vals = [
             permutation_shap(model, Xte[i], Xtr, seed=int(i))
             for i in idxs
         ]
-        # Print first cluster's raw importances for diagnosis
-        if c == 0:
-            first_imp = ps_vals[0]
-            print(f"  [DIAGNOSTIC] C0 sample 0 raw importances: "
-                  f"{np.array2string(first_imp, precision=6, suppress_small=True)}")
-            print(f"    std={first_imp.std():.2e}  max={first_imp.max():.2e}")
-        # [BUG-FIX] permutation_shap() returns (D,) — a 1D importance vector.
-        # The previous line was:
-        #   np.mean([np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
-        # For a 1D v of shape (D,), abs().mean(axis=0) collapses D values
-        # into a single scalar (mean over the feature axis) rather than
-        # preserving the per-feature vector. The list therefore contained
-        # n_cluster scalars, and np.mean() of that list was still a scalar —
-        # so permshap_importance_by_cluster[c] ended up as a 0-D array
-        # (same value broadcast to all "features"). agreement.py then saw
-        # std ≈ 0 across features and flagged it as near-constant, dropping
-        # Perm-SHAP from all Spearman comparisons.
-        #
-        # GS-SHAP and IntGrad escape this because their per-sample objects
-        # are (T, D) cell_maps — abs().mean(axis=0) on a 2D array averages
-        # over T and keeps D, correctly yielding a (D,) vector.
-        #
-        # Fix: stack the (D,) vectors into (n_samples, D) and mean over axis=0.
         permshap_importance_by_cluster[c] = np.mean(
-            np.abs(np.stack(ps_vals)), axis=0)   # (n_samples, D) → (D,)
+            np.abs(np.stack(ps_vals)), axis=0)  # [BUG-FIX] (n_samples,D)->mean->(D,) not scalar
 
     # ── [4/4] Attention-based attribution (excluded from consensus) ─
     print("\n  [4/4] Attention-based Attribution ...")
@@ -428,19 +412,15 @@ def _plot_figure9(importance_by_cluster, gini_group_by_cluster, gfm,
 
     ax = axes[0]
     data = [importance_by_cluster[c] for c in range(n_clusters)]
-    arr = np.array(data)          # (n_clusters, D) e.g. (3, 7)
-    # matplotlib boxplot(X): columns of X become individual boxes.
-    # arr has shape (n_clusters, D) — passing it directly gives D boxes,
-    # each containing n_clusters values (one per cluster). That is the
-    # intended layout: one box per feature, coloured by cluster spread.
-    # [BUG-FIX] The previous version passed arr.T → shape (D, n_clusters),
-    # which matplotlib interpreted as n_clusters boxes (3) while
-    # tick_labels=FEATURES had 7 entries → ValueError: dimensions mismatch.
+    arr = np.array(data)          # expected (n_clusters, D)
+    # Guard against shape mismatch: if importance vectors have fewer dims
+    # than FEATURES (e.g. group-level instead of feature-level), derive
+    # tick_labels from the actual column count rather than assuming D=7.
     n_cols = arr.shape[1] if arr.ndim == 2 else len(FEATURES)
     plot_labels = FEATURES if n_cols == len(FEATURES) else [f"group{i}" for i in range(n_cols)]
     # NOTE: matplotlib renamed Axes.boxplot()'s `labels` kwarg to
     # `tick_labels` (removed in this environment's matplotlib 3.10.8).
-    ax.boxplot(arr, tick_labels=plot_labels)    # arr NOT transposed
+    ax.boxplot(arr, tick_labels=plot_labels)    # [BUG-FIX] arr not transposed
     ax.set_title("GS-SHAP mean |attribution| by feature")
     ax.tick_params(axis='x', rotation=45)
 
