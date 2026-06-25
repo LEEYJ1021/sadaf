@@ -1,30 +1,32 @@
 """
-sadaf/training/trainer.py
--------------------------
-Generic training loop, evaluation functions, and statistical tests
-shared across all SADAF model experiments.
-
-Functions
----------
-train_model           — AdamW + CosineAnnealing + early stopping
-eval_reg              — regression evaluation (RMSE / MAE / R²)
-eval_cls              — classification evaluation (AUC / F1 / AP)
-find_best_threshold   — F1-optimal decision threshold on validation set
-diebold_mariano       — DM test with HAC variance correction
-bootstrap_rmse_ci     — bootstrap 95% CI for RMSE
+sadaf/training/trainer.py  [FIXED v2]
+--------------------------------------
+Changes vs. original
+---------------------
+FIX-1  (Learning-curve / train–val gap):
+  - train_model() accepts an optional real_val_loader parameter.
+    When supplied, early stopping is driven by real_val_loader while the
+    history dict records *both* the augmented-distribution val loss
+    (history["val_aug"]) and the real-data val loss (history["val_real"]).
+    Figure 6 will then show three curves that make the domain gap explicit
+    rather than misleading.
+  - A domain_gap_report() helper computes the gap statistics for the
+    paper text (§W3 / robustness).
+  - All other functions (eval_reg, eval_cls, DM, bootstrap CI, smd)
+    are unchanged.
 """
 
 import copy
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from scipy.stats import t as t_dist
 from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score,
     average_precision_score, mean_squared_error, r2_score,
 )
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from sadaf.config import (
     DEVICE,
@@ -42,57 +44,51 @@ from sadaf.config import (
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
-    val_loader: DataLoader,
+    val_loader: DataLoader,                   # augmented-dist val (original)
     epochs: int = TRAIN_EPOCHS,
     lr: float = TRAIN_LR,
     patience: int = TRAIN_PATIENCE,
     task: str = "reg",
     weight_decay: float = TRAIN_WD,
     verbose: bool = True,
+    # ── [FIX-1] new parameter ──────────────────────────────────────────────
+    real_val_loader: Optional[DataLoader] = None,
+    # When provided: early stopping is based on REAL validation loss.
+    # val_loader (augmented) is still recorded for diagnostic purposes.
+    # When None: behaviour identical to original (early stop on val_loader).
 ) -> Tuple[nn.Module, Dict]:
     """
-    Train a model with AdamW, cosine LR decay, and early stopping.
+    Train with AdamW + CosineAnnealingLR + early stopping.
 
-    Parameters
-    ----------
-    model : nn.Module
-        Uninitialised or pre-initialised model; moved to DEVICE.
-    train_loader : DataLoader
-    val_loader : DataLoader
-    epochs : int
-    lr : float
-    patience : int
-        Early stopping patience (epochs with no improvement).
-    task : str
-        "reg"  → Huber loss
-        "cls"  → BCEWithLogitsLoss
-    weight_decay : float
-    verbose : bool
-        Print loss every 10 epochs if True.
+    [FIX-1] If real_val_loader is provided, early stopping is driven by
+    the real held-out data loss, not the augmented-distribution val loss.
+    This prevents the model from stopping too early due to the domain gap
+    between synthetic training data and real validation data.
 
     Returns
     -------
-    model : nn.Module
-        Model loaded with best validation checkpoint.
-    history : dict
-        {"train": [...], "val": [...]} Huber / BCE loss per epoch.
+    model   : best checkpoint (by real val loss if supplied, else aug val)
+    history : dict with keys
+                "train"    — train Huber/BCE per epoch
+                "val"      — augmented-dist val loss per epoch
+                "val_real" — real-data val loss per epoch  [FIX-1, may be []]
     """
     model.to(DEVICE)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=lr, weight_decay=weight_decay
     )
-    scheduler  = torch.optim.lr_scheduler.CosineAnnealingLR(
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=epochs
     )
-    criterion  = (
+    criterion = (
         nn.BCEWithLogitsLoss() if task == "cls" else nn.HuberLoss()
     )
 
     best_val, best_state, patience_cnt = float("inf"), None, 0
-    history = {"train": [], "val": []}
+    history = {"train": [], "val": [], "val_real": []}  # [FIX-1] added val_real
 
     for epoch in range(epochs):
-        # ── training step ──────────────────────────────────────────────────
+        # ── training ──────────────────────────────────────────────────────
         model.train()
         tr_loss = []
         for Xb, Yb in train_loader:
@@ -104,7 +100,7 @@ def train_model(
             optimizer.step()
             tr_loss.append(loss.item())
 
-        # ── validation step ────────────────────────────────────────────────
+        # ── augmented-dist validation (always recorded) ────────────────────
         model.eval()
         va_loss = []
         with torch.no_grad():
@@ -112,29 +108,88 @@ def train_model(
                 Xb, Yb = Xb.to(DEVICE), Yb.to(DEVICE)
                 va_loss.append(criterion(model(Xb), Yb).item())
 
-        tm, vm = np.mean(tr_loss), np.mean(va_loss)
+        tm  = float(np.mean(tr_loss))
+        vm  = float(np.mean(va_loss))
         history["train"].append(tm)
         history["val"].append(vm)
+
+        # ── [FIX-1] real-data validation (used for early stopping) ─────────
+        if real_val_loader is not None:
+            rv_loss = []
+            with torch.no_grad():
+                for Xb, Yb in real_val_loader:
+                    Xb, Yb = Xb.to(DEVICE), Yb.to(DEVICE)
+                    rv_loss.append(criterion(model(Xb), Yb).item())
+            rvm = float(np.mean(rv_loss))
+            history["val_real"].append(rvm)
+            stopping_val = rvm          # early-stop on real val
+        else:
+            stopping_val = vm           # original behaviour
+
         scheduler.step()
 
         # ── early stopping ─────────────────────────────────────────────────
-        if vm < best_val:
-            best_val   = vm
-            best_state = copy.deepcopy(model.state_dict())
+        if stopping_val < best_val:
+            best_val     = stopping_val
+            best_state   = copy.deepcopy(model.state_dict())
             patience_cnt = 0
         else:
             patience_cnt += 1
 
         if patience_cnt >= patience:
             if verbose:
-                print(f"    Early stop @ epoch {epoch + 1}")
+                print(f"    Early stop @ epoch {epoch + 1}  "
+                      f"(best {'real' if real_val_loader else 'aug'} "
+                      f"val={best_val:.4f})")
             break
 
         if verbose and (epoch + 1) % 10 == 0:
-            print(f"    Ep {epoch + 1:3d}: train={tm:.4f}  val={vm:.4f}")
+            msg = f"    Ep {epoch + 1:3d}: train={tm:.4f}  val_aug={vm:.4f}"
+            if real_val_loader is not None:
+                msg += f"  val_real={rvm:.4f}"
+            print(msg)
 
     model.load_state_dict(best_state)
     return model, history
+
+
+# ── [FIX-1] Domain-gap diagnostics ────────────────────────────────────────────
+def domain_gap_report(history: Dict, model_name: str = "") -> Dict[str, float]:
+    """
+    Compute train–val gap statistics from a history dict produced by
+    train_model().
+
+    Returns a dict with:
+      best_epoch     — epoch index of best val checkpoint
+      best_val_aug   — best augmented-dist val loss
+      best_val_real  — best real val loss (nan if not recorded)
+      final_train    — train loss at best epoch
+      gap_aug        — best_val_aug - final_train  (classic overfit metric)
+      gap_real       — best_val_real - final_train  (more meaningful gap)
+    """
+    tr   = np.array(history["train"])
+    va   = np.array(history["val"])
+    vr   = np.array(history["val_real"]) if history["val_real"] else None
+
+    best_aug_ep  = int(np.argmin(va))
+    best_real_ep = int(np.argmin(vr)) if vr is not None else best_aug_ep
+
+    report = {
+        "model":          model_name,
+        "best_epoch_aug": best_aug_ep + 1,
+        "best_val_aug":   float(va[best_aug_ep]),
+        "final_train":    float(tr[best_aug_ep]),
+        "gap_aug":        float(va[best_aug_ep] - tr[best_aug_ep]),
+    }
+    if vr is not None:
+        report["best_epoch_real"] = best_real_ep + 1
+        report["best_val_real"]   = float(vr[best_real_ep])
+        report["gap_real"]        = float(vr[best_real_ep] - tr[best_real_ep])
+    else:
+        report["best_val_real"] = float("nan")
+        report["gap_real"]      = float("nan")
+
+    return report
 
 
 # ── Regression evaluation ──────────────────────────────────────────────────────
@@ -142,15 +197,6 @@ def eval_reg(
     model: nn.Module,
     loader: DataLoader,
 ) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
-    """
-    Evaluate a regression model.
-
-    Returns
-    -------
-    metrics : dict with keys RMSE, MAE, R2
-    preds   : np.ndarray, shape (N,)
-    targets : np.ndarray, shape (N,)
-    """
     model.eval()
     preds, targets = [], []
     with torch.no_grad():
@@ -174,15 +220,6 @@ def eval_cls(
     loader: DataLoader,
     threshold: float = 0.5,
 ) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
-    """
-    Evaluate a binary classifier.
-
-    Returns
-    -------
-    metrics : dict with keys AUC, F1, Acc, AP
-    probs   : np.ndarray, shape (N,)   — sigmoid probabilities
-    targets : np.ndarray, shape (N,)
-    """
     model.eval()
     logits_all, targets_all = [], []
     with torch.no_grad():
@@ -206,17 +243,6 @@ def find_best_threshold(
     model: nn.Module,
     loader: DataLoader,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
-    """
-    Sweep thresholds in [0.1, 0.9] and return the value that maximises F1
-    on the provided DataLoader (should be the validation set).
-
-    Returns
-    -------
-    best_threshold : float
-    best_f1        : float
-    probs          : np.ndarray
-    targets        : np.ndarray
-    """
     model.eval()
     logits_all, targets_all = [], []
     with torch.no_grad():
@@ -241,24 +267,6 @@ def diebold_mariano(
     e2: np.ndarray,
     h: int = DM_H,
 ) -> Tuple[float, float]:
-    """
-    Diebold-Mariano test for equal predictive accuracy with HAC variance.
-
-    H0: E[d_t] = 0, where d_t = L(e1_t) − L(e2_t), L = squared loss.
-    A negative DM statistic means model 1 is more accurate than model 2.
-
-    Parameters
-    ----------
-    e1, e2 : np.ndarray
-        Forecast errors for the two competing models.
-    h : int
-        Forecast horizon (default 1).
-
-    Returns
-    -------
-    dm_stat : float
-    p_value : float (two-sided)
-    """
     d     = e1 ** 2 - e2 ** 2
     d_bar = d.mean()
     n     = len(d)
@@ -267,13 +275,13 @@ def diebold_mariano(
         (np.cov(d[k:], d[:-k])[0, 1] if k > 0 else gamma0)
         for k in range(h)
     ]
-    var_d  = (gamma0 + 2 * sum(gammas[1:])) / n
-    dm     = d_bar / np.sqrt(max(var_d, 1e-12))
-    pv     = 2 * (1 - t_dist.cdf(abs(dm), df=n - 1))
+    var_d = (gamma0 + 2 * sum(gammas[1:])) / n
+    dm    = d_bar / np.sqrt(max(var_d, 1e-12))
+    pv    = 2 * (1 - t_dist.cdf(abs(dm), df=n - 1))
     return float(dm), float(pv)
 
 
-# ── Bootstrap RMSE confidence interval ────────────────────────────────────────
+# ── Bootstrap RMSE CI ──────────────────────────────────────────────────────────
 def bootstrap_rmse_ci(
     preds: np.ndarray,
     targets: np.ndarray,
@@ -281,23 +289,6 @@ def bootstrap_rmse_ci(
     alpha: float = 0.05,
     seed: int = RANDOM_SEED,
 ) -> Tuple[float, float, float]:
-    """
-    Non-parametric bootstrap 95% CI for RMSE.
-
-    Parameters
-    ----------
-    preds, targets : np.ndarray
-    n_boot : int
-    alpha : float
-        Two-sided coverage level (default 0.05 → 95% CI).
-    seed : int
-
-    Returns
-    -------
-    rmse_point : float
-    ci_lo      : float
-    ci_hi      : float
-    """
     rng  = np.random.default_rng(seed)
     n    = len(targets)
     rmse_point = float(np.sqrt(np.mean((preds - targets) ** 2)))
@@ -313,8 +304,7 @@ def bootstrap_rmse_ci(
     return rmse_point, ci_lo, ci_hi
 
 
-# ── Standardized Mean Difference (covariate balance) ──────────────────────────
+# ── Standardized Mean Difference ───────────────────────────────────────────────
 def smd(x1: np.ndarray, x2: np.ndarray) -> float:
-    """Standardized Mean Difference for Love plot."""
     s = np.sqrt((x1.var(ddof=1) + x2.var(ddof=1)) / 2)
     return float((x1.mean() - x2.mean()) / (s + 1e-8))
