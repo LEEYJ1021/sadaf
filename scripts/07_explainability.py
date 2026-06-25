@@ -127,8 +127,11 @@ def main():
         )
         import traceback
         traceback.print_stack()
-    print(f"  Augmentation: {len(Xtr)} → ~{len(Xtr)+len(X_aug)} "
-          f"(+{len(X_aug)} per method)")
+    # The authoritative "Augmentation: ..." line is already printed by
+    # augment_pipeline() internally. The duplicate print here was
+    # producing a misleading second line with "+870 per method" (using
+    # len(X_aug) instead of n_each), which looked like a second
+    # augment_pipeline() call with a much larger target_n in the logs.
 
     from torch.utils.data import DataLoader, TensorDataset
     tr_l = DataLoader(
@@ -271,7 +274,18 @@ def main():
     permshap_importance_by_cluster = {}
     for c in range(n_clusters):
         idxs = np.where(cluster_labels == c)[0]
-        ps_vals = [permutation_shap(model, Xte[i], Xtr) for i in idxs]
+        # [BUG-FIX] Previously called without `seed`, so permutation_shap()
+        # used a hard-coded rng = np.random.default_rng(42) internally —
+        # resetting to the same state on every call and producing identical
+        # background-index sequences for every x_sample. This made the
+        # importance vectors near-constant across all samples and clusters
+        # (std ≈ 0), triggering "near-constant → Spearman undefined" in
+        # agreement.py.  Fix: pass seed=int(idxs[j]) so each sample draws
+        # a different background sequence while remaining reproducible.
+        ps_vals = [
+            permutation_shap(model, Xte[i], Xtr, seed=int(i))
+            for i in idxs
+        ]
         permshap_importance_by_cluster[c] = np.mean(
             [np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
 
@@ -359,11 +373,15 @@ def _plot_figure9(importance_by_cluster, gini_group_by_cluster, gfm,
 
     ax = axes[0]
     data = [importance_by_cluster[c] for c in range(n_clusters)]
+    arr = np.array(data)          # expected (n_clusters, D)
+    # Guard against shape mismatch: if importance vectors have fewer dims
+    # than FEATURES (e.g. group-level instead of feature-level), derive
+    # tick_labels from the actual column count rather than assuming D=7.
+    n_cols = arr.shape[1] if arr.ndim == 2 else len(FEATURES)
+    plot_labels = FEATURES if n_cols == len(FEATURES) else [f"group{i}" for i in range(n_cols)]
     # NOTE: matplotlib renamed Axes.boxplot()'s `labels` kwarg to
-    # `tick_labels` (the old name was removed in this environment's
-    # matplotlib 3.10.8; it had been deprecated since ~3.9). Using
-    # tick_labels here for compatibility.
-    ax.boxplot(np.array(data).T, tick_labels=FEATURES)
+    # `tick_labels` (removed in this environment's matplotlib 3.10.8).
+    ax.boxplot(arr.T, tick_labels=plot_labels)
     ax.set_title("GS-SHAP mean |attribution| by feature")
     ax.tick_params(axis='x', rotation=45)
 
