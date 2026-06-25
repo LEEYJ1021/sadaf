@@ -359,7 +359,11 @@ def _plot_figure9(importance_by_cluster, gini_group_by_cluster, gfm,
 
     ax = axes[0]
     data = [importance_by_cluster[c] for c in range(n_clusters)]
-    ax.boxplot(np.array(data).T, labels=FEATURES)
+    # NOTE: matplotlib renamed Axes.boxplot()'s `labels` kwarg to
+    # `tick_labels` (the old name was removed in this environment's
+    # matplotlib 3.10.8; it had been deprecated since ~3.9). Using
+    # tick_labels here for compatibility.
+    ax.boxplot(np.array(data).T, tick_labels=FEATURES)
     ax.set_title("GS-SHAP mean |attribution| by feature")
     ax.tick_params(axis='x', rotation=45)
 
