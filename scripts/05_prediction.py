@@ -68,7 +68,12 @@ def run_h4a(df_paid: pd.DataFrame):
     print("\n══ H4a: Classification Stage ═══════════════════════")
 
     # [FIX-2] unpack three return values
-    X_cls, Y_cls, _gids = build_sequences(df_paid, "has_roas", FEATURES, seq_len=4)
+    X_cls, Y_cls, _gids = build_sequences(
+    df_paid,
+    "has_roas",
+    seq_len=4,
+    features=FEATURES
+    )
 
     (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = time_split(X_cls, Y_cls)
     Xtr_n, Xva_n, Xte_n, _ = normalize_X(Xtr, Xva, Xte)
@@ -140,7 +145,12 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
     reg_by_sl = {}
     for SL in [4, 6]:
         # [FIX-2] unpack group_ids
-        Xr, Yr, gids = build_sequences(df_roas, "log_ROAS", FEATURES, seq_len=SL)
+        Xr, Yr, gids = build_sequences(
+            df_roas,
+            "log_ROAS",
+            seq_len=SL,
+            features=FEATURES
+        )
         reg_by_sl[SL] = (Xr, Yr, gids)
         print(f"  REG SEQ_LEN={SL}: {Xr.shape}")
 
@@ -182,13 +192,47 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
     X_te_n  = np.clip(sc.transform(Xte.reshape(-1, D_a)).reshape(Xte.shape), 0, 1)
 
     bs   = min(128, len(X_aug_n))
-    # Augmented train loader (synthetic data)
-    tr_l = DataLoader(SeqDataset(X_aug_n, Y_aug), batch_size=bs, shuffle=True)
-    # [FIX-1] Augmented-dist val (for history["val"])
-    va_l = DataLoader(SeqDataset(X_va_n, Yva), batch_size=bs)
-    # [FIX-1] Real val loader (drives early stopping)
-    real_va_l = DataLoader(SeqDataset(X_va_n, Yva), batch_size=bs)
-    te_l = DataLoader(SeqDataset(X_te_n, Yte), batch_size=bs)
+    
+    
+    # ============================================================
+    # FIX-1: Separate synthetic validation and real validation
+    # ============================================================
+    
+    # Synthetic training data
+    tr_l = DataLoader(
+        SeqDataset(X_aug_n, Y_aug),
+        batch_size=bs,
+        shuffle=True
+    )
+    
+    
+    # Synthetic validation split
+    # (augmentation distribution diagnostic)
+    val_size = min(len(X_aug_n) // 10, len(X_aug_n))
+    
+    X_aug_val = X_aug_n[:val_size]
+    Y_aug_val = Y_aug[:val_size]
+    
+    
+    va_l = DataLoader(
+        SeqDataset(X_aug_val, Y_aug_val),
+        batch_size=bs
+    )
+    
+    
+    # Real held-out validation
+    # (used for early stopping)
+    real_va_l = DataLoader(
+        SeqDataset(X_va_n, Yva),
+        batch_size=bs
+    )
+    
+    
+    # Test
+    te_l = DataLoader(
+        SeqDataset(X_te_n, Yte),
+        batch_size=bs
+    )
 
     model_registry = {
         "BayesianLSTM": BayesianLSTM(D_IN, dropout=0.4),
