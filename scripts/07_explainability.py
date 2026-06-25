@@ -271,6 +271,38 @@ def main():
 
     # ── [3/4] Permutation SHAP ───────────────────────────────────────
     print("\n  [3/4] Permutation SHAP ...")
+    # [DIAGNOSTIC] Run a quick sanity check on the first test sample to
+    # determine whether model outputs actually vary when features are
+    # permuted. If base_out ≈ all perm_out values (range < 1e-4), Perm-SHAP
+    # importances will all be ≈ 0 regardless of seed — this is a model
+    # sensitivity issue, not a code bug.
+    _diag_sample = Xte[0]
+    _diag_x_t = torch.FloatTensor(_diag_sample).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        _diag_base = float(model(_diag_x_t).item())
+    _diag_perm_outs = []
+    _rng_diag = np.random.default_rng(0)
+    for _ in range(20):
+        _x_p = _diag_sample.copy()
+        _bg = _rng_diag.integers(0, len(Xtr))
+        _x_p[:, 0] = Xtr[_bg, :, 0]  # permute feature 0 only
+        _x_pt = torch.FloatTensor(_x_p).unsqueeze(0).to(DEVICE)
+        with torch.no_grad():
+            _diag_perm_outs.append(float(model(_x_pt).item()))
+    _diag_range = max(_diag_perm_outs) - min(_diag_perm_outs)
+    print(f"  [DIAGNOSTIC] Perm-SHAP sensitivity check (feature 0, n=20 perms):")
+    print(f"    base_out={_diag_base:.6f}  perm_out range={_diag_range:.6f}"
+          f"  (|base - perm| mean={np.mean(np.abs(np.array(_diag_perm_outs)-_diag_base)):.6f})")
+    if _diag_range < 1e-4:
+        print("    ⚠ Model output is insensitive to feature permutation — "
+              "Perm-SHAP importances will be near-zero for all features. "
+              "This is a model saturation / low-signal issue, NOT a code bug. "
+              "Consider: (a) using Xte as background instead of Xtr, "
+              "(b) increasing n_permutations, or (c) reporting Perm-SHAP "
+              "as 'underpowered' for this dataset scale.")
+    else:
+        print("    ✓ Model is sensitive to permutation — Perm-SHAP should work.")
+
     permshap_importance_by_cluster = {}
     for c in range(n_clusters):
         idxs = np.where(cluster_labels == c)[0]
@@ -280,12 +312,18 @@ def main():
         # background-index sequences for every x_sample. This made the
         # importance vectors near-constant across all samples and clusters
         # (std ≈ 0), triggering "near-constant → Spearman undefined" in
-        # agreement.py.  Fix: pass seed=int(idxs[j]) so each sample draws
+        # agreement.py.  Fix: pass seed=int(i) so each sample draws
         # a different background sequence while remaining reproducible.
         ps_vals = [
             permutation_shap(model, Xte[i], Xtr, seed=int(i))
             for i in idxs
         ]
+        # Print first cluster's raw importances for diagnosis
+        if c == 0:
+            first_imp = ps_vals[0]
+            print(f"  [DIAGNOSTIC] C0 sample 0 raw importances: "
+                  f"{np.array2string(first_imp, precision=6, suppress_small=True)}")
+            print(f"    std={first_imp.std():.2e}  max={first_imp.max():.2e}")
         permshap_importance_by_cluster[c] = np.mean(
             [np.abs(v).mean(axis=0) for v in ps_vals], axis=0)
 
