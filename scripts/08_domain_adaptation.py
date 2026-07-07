@@ -17,7 +17,8 @@ from torch.utils.data import DataLoader
 from sadaf.data.loader import load_and_preprocess
 from sadaf.data.sequence import build_sequences, time_split
 from sadaf.models.gru import GRUForecaster
-from sadaf.training.trainer import train_model, eval_reg, SeqDataset
+from sadaf.training.trainer import train_model, eval_reg
+from sadaf.data.sequence import SeqDataset  # [FIX-14] moved from trainer.py
 
 warnings.filterwarnings("ignore")
 
@@ -33,8 +34,12 @@ def run_ks_test(df: pd.DataFrame):
     print("\n══ H6: Domain Shift Analysis ═══════════════════════")
     df_shop = df[df["campaign_type_label"] == "Shopping"]
     df_search = df[df["campaign_type_label"] == "Search"]
-    X_shop, Y_shop = build_sequences(df_shop, "log_ROAS", FEATURES, seq_len=4)
-    X_src, Y_src = build_sequences(df_search, "log_ROAS", FEATURES, seq_len=4)
+    # [FIX-15] features must be passed as keyword (positional 3rd slot is
+    # seq_len in the current signature); return is a 3-tuple (X, Y, group_ids)
+    X_shop, Y_shop, _shop_gids = build_sequences(
+        df_shop, "log_ROAS", seq_len=4, features=FEATURES)
+    X_src, Y_src, _src_gids = build_sequences(
+        df_search, "log_ROAS", seq_len=4, features=FEATURES)
     print(f"  Shopping: {X_shop.shape}  Search: {X_src.shape}")
 
     n_sig = 0

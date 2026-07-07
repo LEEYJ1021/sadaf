@@ -1,7 +1,7 @@
 # SADAF — v4/v5 Full Analysis (Korea / March-2025 Case Study)
 
 
-_Generated 2026-07-07 12:10 from `run_sadaf_v5_korea_case_study.py`. Patches applied: FIX-9 (H5 group-level verdict), FIX-10 (FDR-corrected DM), FIX-22/23 (05_prediction.py: explicit seed refixation before model instantiation and before each model's training loop, for H4b winner reproducibility), FIX-11/12/13 (pre-existing psm/mediation/moderation API mismatches in 03_causal.py), FIX-14/15 (08_domain_adaptation.py import + build_sequences() API mismatches), FIX-16/17/18/19/19b/20 (09_robustness.py import, build_sequences(), augment_pipeline() keyword, and CPU/GPU device mismatches), FIX-21 (sadaf/augmentation/pipeline.py: explicit seed fixation in train_vae()/vae_augment() for FSD reproducibility)._
+_Generated 2026-07-07 12:35 from `run_sadaf_v5_korea_case_study.py`. Patches applied: FIX-9 (H5 group-level verdict), FIX-10 (FDR-corrected DM), FIX-22/23 (05_prediction.py: explicit seed refixation before model instantiation and before each model's training loop, for H4b winner reproducibility), FIX-11/12/13 (pre-existing psm/mediation/moderation API mismatches in 03_causal.py), FIX-14/15 (08_domain_adaptation.py import + build_sequences() API mismatches), FIX-16/17/18/19/19b/20 (09_robustness.py import, build_sequences(), augment_pipeline() keyword, and CPU/GPU device mismatches), FIX-21 (sadaf/augmentation/pipeline.py: explicit seed fixation in train_vae()/vae_augment() for FSD reproducibility)._
 
 
 
@@ -365,7 +365,7 @@ Mamba                      35         0.7910        0.4564       0.6138    0.114
   Zero-ROAS %   : 72.1%
 ─────────────────────────────────────────────────────────
   Split sizes — train:174  val:24  test:24
-  [DIAGNOSTIC] augment_pipeline call site: 07_explainability.py main(), target_n=870, len(Xtr)=174, pid=3618460
+  [DIAGNOSTIC] augment_pipeline call site: 07_explainability.py main(), target_n=870, len(Xtr)=174, pid=3619919
   Augmentation: 174 → ~870 (+232 per method)
   [1/3] Training β-VAE ...
     VAE Ep 100: loss=53648.92
@@ -385,7 +385,7 @@ Mamba                      35         0.7910        0.4564       0.6138    0.114
   [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3/4a/4b] ...
 [GS-SHAP] Computing HSIC feature groups from training data...
   [HSIC] eigengap → K=2 groups (D=7 features)
-  Groups: [[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)], [np.int64(5), np.int64(6)]]  (0.06s)
+  Groups: [[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)], [np.int64(5), np.int64(6)]]  (0.11s)
   [Segmentation] seg_len=1, time_segments=4, n_players=8 (K=2 groups × 4 time segments)
   [Reporting] HSIC groups → raw features: {0: [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)], 1: [np.int64(5), np.int64(6)]}
   [Reporting] 2 independent group-level Gini values will be reported; per-feature values inside a group are identical by construction (see gsshap.py FIX-5).
@@ -449,13 +449,13 @@ Mamba                      35         0.7910        0.4564       0.6138    0.114
 
 ══ Domain Adaptation: Search → Shopping ════════════
   Step 1: Training source model on Search...
-    Ep  10: train=0.5985  val_aug=0.2731
-    Early stop @ epoch 17  (best aug val=0.2722)
-  Naive transfer RMSE = 1.3133
+    Ep  10: train=0.5994  val_aug=0.2720
+    Early stop @ epoch 17  (best aug val=0.2718)
+  Naive transfer RMSE = 1.3176
   Step 2: Fine-tuning on Shopping (50% frozen)...
-    Ep  10: train=0.4927  val_aug=0.2718
-    Early stop @ epoch 14  (best aug val=0.2716)
-  Adapted transfer RMSE = 1.3133  (gain: -0.0% vs naive transfer)
+    Ep  10: train=0.4919  val_aug=0.2724
+    Early stop @ epoch 14  (best aug val=0.2720)
+  Adapted transfer RMSE = 1.3128  (gain: +0.4% vs naive transfer)
   NOTE: modest improvement; primary contribution is theoretical
   justification for domain-adaptive design, not a performance claim.
 

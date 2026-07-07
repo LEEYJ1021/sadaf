@@ -45,8 +45,16 @@ def train_vae(
     batch_size: int = VAE_BATCH,
     latent_dim: int = VAE_LATENT_DIM,
     beta: float = VAE_BETA,
+    seed: int = RANDOM_SEED,  # [FIX-21]
 ) -> AdSequenceVAE:
-    """Train a β-VAE on real sequences and return the fitted model."""
+    """Train a β-VAE on real sequences and return the fitted model.
+
+    [FIX-21] seed is explicitly (re)applied here so that model
+    initialisation, batch shuffling, and downstream sampling are
+    reproducible regardless of how much global RNG state was consumed
+    by earlier pipeline stages (e.g. LOGO-CV)."""
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     N, T, D = X_real.shape
     vae      = AdSequenceVAE(T, D, latent_dim=latent_dim, beta=beta)
     vae.to(DEVICE)
@@ -72,11 +80,17 @@ def vae_augment(
     vae: AdSequenceVAE,
     n_synthetic: int,
     noise_scale: float = 0.02,
+    seed: int = RANDOM_SEED,  # [FIX-21]
 ) -> np.ndarray:
     """
     Draw n_synthetic samples from the VAE prior and decode them.
     A small Gaussian noise is added to break decoder determinism.
+
+    [FIX-21] seed is explicitly (re)applied here so latent sampling and
+    decoder noise are reproducible across pipeline runs.
     """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     vae.eval()
     with torch.no_grad():
         z     = torch.randn(n_synthetic, VAE_LATENT_DIM).to(DEVICE)
@@ -185,8 +199,8 @@ def augment_pipeline(
 
     # 1. β-VAE
     print("  [1/3] Training β-VAE ...")
-    vae   = train_vae(X_real, epochs=VAE_EPOCHS)
-    X_vae = vae_augment(vae, n_each)
+    vae   = train_vae(X_real, epochs=VAE_EPOCHS, seed=seed)  # [FIX-21]
+    X_vae = vae_augment(vae, n_each, seed=seed)  # [FIX-21]
     Y_vae = rng.choice(Y_real, n_each)
 
     # 2. Gaussian Copula

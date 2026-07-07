@@ -25,7 +25,9 @@ from sadaf.augmentation.pipeline import augment_pipeline
 from sadaf.models.gru import GRUForecaster
 from sadaf.models.lstm import LSTMForecaster, BayesianLSTM
 from sadaf.models.mamba import MambaForecaster
-from sadaf.training.trainer import train_model, eval_reg, diebold_mariano, SeqDataset
+from sadaf.training.trainer import train_model, eval_reg, diebold_mariano
+from sadaf.data.sequence import SeqDataset  # [FIX-16] moved from trainer.py
+from sadaf.config import DEVICE  # [FIX-20] DEVICE lives in config.py, not imported before
 
 warnings.filterwarnings("ignore")
 
@@ -98,13 +100,14 @@ def run_regularisation_grid(X_tr_n, Y_tr, X_va_n, Y_va, X_te_n, Y_te,
     for do in dropout_vals:
         for wd in wd_vals:
             key = f"do={do}_wd={wd}"
-            m = GRUForecaster(D_IN, dropout=do)
+            m = GRUForecaster(D_IN, dropout=do).to(DEVICE)  # [FIX-19]
             opt = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=wd)
             criterion = nn.HuberLoss()
             best_v, best_state, pat = float("inf"), None, 0
-            for ep in range(60):
+            for ep in range(60):  # [FIX-19b] move batches to DEVICE explicitly
                 m.train()
                 for Xb, Yb in tr_loader:
+                    Xb, Yb = Xb.to(DEVICE), Yb.to(DEVICE)
                     opt.zero_grad()
                     loss = criterion(m(Xb), Yb)
                     loss.backward()
@@ -114,6 +117,7 @@ def run_regularisation_grid(X_tr_n, Y_tr, X_va_n, Y_va, X_te_n, Y_te,
                 vl = []
                 with torch.no_grad():
                     for Xb, Yb in va_loader:
+                        Xb, Yb = Xb.to(DEVICE), Yb.to(DEVICE)
                         vl.append(criterion(m(Xb), Yb).item())
                 vm = np.mean(vl)
                 if vm < best_v:
@@ -174,7 +178,9 @@ def main():
 
     run_logo_cv(df_roas)
 
-    X_reg, Y_reg = build_sequences(df_roas, "log_ROAS", FEATURES, seq_len=4)
+    # [FIX-17] features must be passed as keyword; return is a 3-tuple
+    X_reg, Y_reg, _reg_gids = build_sequences(
+        df_roas, "log_ROAS", seq_len=4, features=FEATURES)
     (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = time_split(X_reg, Y_reg)
     if len(Xva) < 10 or len(Xte) < 10:
         (Xtr, Ytr), (Xva, Yva), (Xte, Yte) = time_split(X_reg, Y_reg, 0.60, 0.80)
@@ -191,9 +197,10 @@ def main():
         DataLoader(SeqDataset(Xva_n0, Yva), batch_size=bs0),
         epochs=50, patience=8)
 
+    # [FIX-18] augment_pipeline()'s actual parameter is ref_model, not ref_lstm
     X_aug, Y_aug = augment_pipeline(
         Xtr.astype(np.float32), Ytr.astype(np.float32),
-        target_n=max(args.target_n, len(Xtr) * 5), ref_lstm=ref_gru)
+        target_n=max(args.target_n, len(Xtr) * 5), ref_model=ref_gru)
 
     sc = MinMaxScaler()
     N_a, T_a, D_a = X_aug.shape

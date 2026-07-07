@@ -234,6 +234,14 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
         batch_size=bs
     )
 
+    # [FIX-22] Re-fix the seed immediately before model instantiation.
+    # model_registry's dict literal instantiates all 5 models eagerly,
+    # consuming global RNG state left over from the BayesianLSTM-Cls,
+    # LSTM-Cls, and ref_gru training that already happened above. Without
+    # this reset, each model's initial weights (and therefore the H4b
+    # winner) vary across runs even with RANDOM_SEED fixed at the top.
+    torch.manual_seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
     model_registry = {
         "BayesianLSTM": BayesianLSTM(D_IN, dropout=0.4),
         "LSTM":         LSTMForecaster(D_IN),
@@ -244,6 +252,13 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
     reg_results, reg_preds, gap_reports = {}, {}, []
 
     for name, model in model_registry.items():
+        # [FIX-23] Re-fix the seed before each model's training loop.
+        # Without this, model N's batch-shuffle/dropout RNG consumption
+        # (which varies with its early-stopping epoch) shifts the RNG
+        # state that model N+1 starts training from, making the H4b
+        # winner non-reproducible across runs even with FIX-22 applied.
+        torch.manual_seed(RANDOM_SEED)
+        np.random.seed(RANDOM_SEED)
         # [FIX-1] pass real_val_loader → early stop on real data
         trained, history = train_model(
             model, tr_l, va_l,
@@ -295,9 +310,11 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
           f"({best_deep} RMSE={reg_results[best_deep]['RMSE']:.4f} "
           f"vs {best_base} RMSE={reg_results[best_base]['RMSE']:.4f})")
 
-    # DM tests
-    print("\n  ── Significant DM Comparisons ─────────────────────")
+    # DM tests [FIX-10] — raw AND BH-FDR corrected, shown together
+    from statsmodels.stats.multitest import multipletests
+    print("\n  ── DM Comparisons: raw p + BH-FDR correction [FIX-10] ──")
     model_order = list(reg_preds.keys())
+    pairs, dm_vals, raw_p = [], [], []
     for i, m1 in enumerate(model_order):
         for m2 in model_order[i + 1:]:
             p1, t1 = reg_preds[m1]
@@ -305,9 +322,26 @@ def run_h4b_h4c(df_roas: pd.DataFrame, target_n: int = 800):
             n_min  = min(len(t1), len(t2))
             dm_v, pv = diebold_mariano(
                 t1[:n_min] - p1[:n_min], t2[:n_min] - p2[:n_min])
-            if pv < 0.05:
-                winner = m1 if dm_v < 0 else m2
-                print(f"  {m1} vs {m2}: DM={dm_v:.4f} p={pv:.4f} → {winner}")
+            pairs.append((m1, m2)); dm_vals.append(dm_v); raw_p.append(pv)
+
+    if raw_p:
+        reject_fdr, p_fdr, _, _ = multipletests(raw_p, alpha=0.05, method="fdr_bh")
+    else:
+        reject_fdr, p_fdr = [], []
+
+    for (m1, m2), dm_v, pv, pf, rj in zip(pairs, dm_vals, raw_p, p_fdr, reject_fdr):
+        winner = m1 if dm_v < 0 else m2
+        star_raw = "*" if pv < 0.05 else " "
+        star_fdr = "*" if rj else " "
+        print(f"  {m1:<12} vs {m2:<12}  DM={dm_v:7.4f}"
+              f"  p_raw={pv:.4f}{star_raw}  p_FDR={pf:.4f}{star_fdr}  → {winner}")
+
+    n_sig_raw = sum(p < 0.05 for p in raw_p)
+    n_sig_fdr = int(sum(reject_fdr)) if len(reject_fdr) else 0
+    print(f"\n  Summary: {n_sig_raw}/{len(pairs)} pairs significant at raw p<0.05; "
+          f"{n_sig_fdr}/{len(pairs)} remain significant after BH-FDR "
+          f"(test sequences n={n_min if pairs else 'NA'}). "
+          f"Report both numbers in the manuscript — do not report raw-only.")
 
     return reg_results, reg_preds, reg_by_sl
 

@@ -363,26 +363,31 @@ def main():
               f"these clusters should be reported with this caveat, not as "
               f"unconditional null/positive findings.")
 
-    # ── Kruskal-Wallis (GS-SHAP, primary) ───────────────────────────
-    print("\n  ── Kruskal-Wallis (GS-SHAP, primary) ──────────────")
+    # ── Kruskal-Wallis (GS-SHAP, GROUP-LEVEL, primary) [FIX-9] ──────
+    print("\n  ── Kruskal-Wallis (GS-SHAP, GROUP-LEVEL, primary) [FIX-9] ──")
     kw_results = {}
-    for k, feat in enumerate(FEATURES):
+    for gid in group_ids_sorted:
+        rep_idx = gfm[gid][0]
         groups = [
-            np.array([np.abs(cm[:, k]).mean() for cm in cell_maps_by_cluster[c]])
+            np.array([np.abs(cm[:, rep_idx]).mean() for cm in cell_maps_by_cluster[c]])
             for c in range(n_clusters)
         ]
         groups = [g for g in groups if len(g) > 0]
         if len(groups) < 2 or any(len(g) < 2 for g in groups):
-            print(f"  {feat:<18} skipped (insufficient n per cluster)")
+            print(f"  group{gid} {gfm[gid]!s:<28} skipped (insufficient n per cluster)")
             continue
         h_stat, p_val = scipy_stats.kruskal(*groups)
         sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
-        kw_results[feat] = (h_stat, p_val)
-        print(f"  {feat:<18} p={p_val:.4e} {sig}")
+        kw_results[gid] = (h_stat, p_val)
+        print(f"  group{gid} {gfm[gid]!s:<28} p={p_val:.4e} {sig}"
+              f"   (applies identically to all {len(gfm[gid])} raw features in this group)")
 
     n_sig = sum(1 for _, p in kw_results.values() if p < 0.05)
-    print(f"\n  H5: {'SUPPORTED ✓' if n_sig >= 4 else 'PARTIAL ⚬' if n_sig >= 1 else 'NULL ⚬'}"
-          f"  ({n_sig}/{len(kw_results)} significant)")
+    n_groups = len(kw_results)
+    print(f"\n  H5 [FIX-9]: "
+          f"{'SUPPORTED ✓' if n_sig >= 1 else 'NULL ⚬'}"
+          f"  ({n_sig}/{n_groups} HSIC GROUP-LEVEL tests significant — "
+          f"NOT a per-feature count; see gsshap.py FIX-5)")
     if underpowered_clusters:
         print(f"  → Caveat: result is influenced by underpowered cluster(s) "
               f"{underpowered_clusters}; see note above.")
