@@ -395,62 +395,98 @@ Additional sequence-length variant used for H4c robustness: **SEQ_LEN=6 → (125
 
 ```
 sadaf/
-│
-├── README.md                        # This file (curated narrative)
-├── requirements.txt
-├── LICENSE
-├── .gitignore
-│
+├── data/
+│   └── README_data.md
+├── docs/
+│   ├── methodology.md
+│   └── results_table.md
+├── figures/
+│   ├── fig_01_dag.png
+│   ├── fig_02_psm_h1.png
+│   ├── fig_02b_love_plot.png
+│   ├── fig_03_mediation_h2.png
+│   ├── fig_03b_suppressor.png
+│   ├── fig_04_moderation_h3.png
+│   ├── fig_05_model_comparison.png
+│   ├── fig_06_learning_curves.png
+│   ├── fig_07_mamba_sensitivity.png
+│   ├── fig_08_gsshap_heatmaps.png
+│   ├── fig_08b_multi_attribution.png
+│   ├── fig_08c_agreement.png
+│   ├── fig_09_gsshap_importance.png
+│   ├── fig_09b_rank_consensus.png
+│   ├── fig_10_cluster_profile.png
+│   ├── fig_11_domain_shift.png
+│   ├── fig_12_cls_supplement.png
+│   ├── fig_13_dm_test.png
+│   ├── fig_14_bayesian_uncertainty.png
+│   ├── fig_W1a_aug_quality.png
+│   ├── fig_W1b_data_scaling.png
+│   ├── fig_W1c_logo_cv.png
+│   ├── fig_W2a_temporal_stability.png
+│   ├── fig_W2b_multi_advertiser.png
+│   ├── fig_W3_overfitting_regularisation.png
+│   ├── fig_W4_attribution_disagreement.png
+│   ├── fig_W5_protonet_coldstart.png
+│   ├── fig_W6_dm_corrected.png
+│   └── fig_W7_is_theory.png
+├── readme/
+│   └── README_v4_full.md               # Full captured stdout log - source of truth for exact numbers
 ├── sadaf/
-│   ├── config.py                    # RANDOM_SEED, DEVICE, hyperparameters
-│   ├── data/
-│   │   ├── loader.py
-│   │   └── sequence.py              # build_sequences(), group_time_split(), SeqDataset
 │   ├── augmentation/
-│   │   ├── vae.py
-│   │   ├── copula.py                # ⚠ no explicit seed param yet (see Open Items)
-│   │   ├── mbb.py                   # ⚠ no explicit seed param yet (see Open Items)
-│   │   └── pipeline.py              # [FIX-21] seed refixation in train_vae()/vae_augment()
+│   │   ├── __init__.py
+│   │   ├── copula.py                   # no explicit seed param yet (see Open Items)
+│   │   ├── mbb.py                      # no explicit seed param yet (see Open Items)
+│   │   ├── pipeline.py                 # [FIX-21] seed refixation in train_vae()/vae_augment()
+│   │   └── vae.py
 │   ├── causal/
-│   │   ├── psm.py                   # run_psm_ipw() [FIX-11]
-│   │   ├── mediation.py             # run_mediation() [FIX-12]
-│   │   └── moderation.py            # run_moderation() [FIX-13]
+│   │   ├── __init__.py
+│   │   ├── mediation.py                # run_mediation() [FIX-12]
+│   │   ├── moderation.py               # run_moderation() [FIX-13]
+│   │   └── psm.py                      # run_psm_ipw() [FIX-11]
+│   ├── data/
+│   │   ├── __init__.py
+│   │   ├── loader.py
+│   │   └── sequence.py
+│   ├── explainability/
+│   │   ├── __init__.py
+│   │   ├── agreement.py
+│   │   ├── gsshap.py                   # group_temporal_gini(), compute_cluster_gini(level=group)
+│   │   ├── intgrad.py
+│   │   └── permshap.py
 │   ├── models/
-│   │   ├── lstm.py
+│   │   ├── __init__.py
+│   │   ├── attention.py
 │   │   ├── gru.py
+│   │   ├── lstm.py
 │   │   ├── mamba.py
-│   │   ├── protonet.py
-│   │   └── attention.py
+│   │   └── protonet.py
 │   ├── training/
-│   │   └── trainer.py               # train_model, eval_reg, diebold_mariano
-│   └── explainability/
-│       ├── gsshap.py                # group_temporal_gini(), compute_cluster_gini(level="group")
-│       ├── intgrad.py
-│       ├── permshap.py
-│       └── agreement.py
-│
+│   │   ├── __init__.py
+│   │   └── trainer.py                  # train_model, eval_reg, diebold_mariano
+│   ├── __init__.py
+│   └── config.py
 ├── scripts/
 │   ├── 01_eda.py
 │   ├── 02_zinb.py
-│   ├── 03_causal.py                 # [FIX-11/12/13]
+│   ├── 03_causal.py                    # [FIX-11/12/13]
 │   ├── 04_augmentation.py
-│   ├── 05_prediction.py             # [FIX-10/22/23]
+│   ├── 05_prediction.py                # [FIX-10/22/23]
 │   ├── 06_uncertainty.py
-│   ├── 07_explainability.py         # [FIX-9], requires --out_dir
-│   ├── 08_domain_adaptation.py      # [FIX-14/15]
-│   ├── 09_robustness.py             # [FIX-16/17/18/19/19b/20]
+│   ├── 07_explainability.py            # [FIX-9], requires --out_dir
+│   ├── 08_domain_adaptation.py         # [FIX-14/15]
+│   ├── 09_robustness.py                # [FIX-16/17/18/19/19b/20]
 │   └── 10_figures.py
-│
-├── readme/
-│   └── README_v4_full.md            # Full captured stdout log — source of truth for exact numbers
-│
-├── figures/                          # All output figures (auto-generated)
-│   └── best_bayesian_lstm.pt        # BayesianLSTM checkpoint (FIX-7); delete to force retrain
-├── data/
-│   └── README_data.md
 ├── tests/
-└── docs/
+│   ├── test_augmentation.py
+│   ├── test_causal.py
+│   └── test_models.py
+├── .gitignore
+├── LICENSE
+├── README.md                           # This file (curated narrative)
+└── requirements.txt
 ```
+
 
 ---
 
