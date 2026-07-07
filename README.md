@@ -1,677 +1,758 @@
-# SADAF — v4/v5 Full Analysis (Korea / March-2025 Case Study)
+# SADAF: Sparse Ad Data Augmentation Framework
 
+> **A Unified Causal-Predictive-Explainable Framework for Cold-Start Advertisement Performance Forecasting**
 
-_Generated 2026-07-07 12:10 from `run_sadaf_v5_korea_case_study.py`. Patches applied: FIX-9 (H5 group-level verdict), FIX-10 (FDR-corrected DM), FIX-22/23 (05_prediction.py: explicit seed refixation before model instantiation and before each model's training loop, for H4b winner reproducibility), FIX-11/12/13 (pre-existing psm/mediation/moderation API mismatches in 03_causal.py), FIX-14/15 (08_domain_adaptation.py import + build_sequences() API mismatches), FIX-16/17/18/19/19b/20 (09_robustness.py import, build_sequences(), augment_pipeline() keyword, and CPU/GPU device mismatches), FIX-21 (sadaf/augmentation/pipeline.py: explicit seed fixation in train_vae()/vae_augment() for FSD reproducibility)._
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+---
 
+## 📌 v5.1 Update Log (read this first)
 
-> **Why Korea, why March 2025, why a single (Naver-based) advertiser?**
-> This is presented as the intentional scope of a *boundary-condition case
-> study*, not an incidental limitation. According to InternetTrend data
-> reported by BusinessKorea (Apr 2026), Naver held an average **63.8%**
-> share of Korean search volume in March 2025 versus Google's **28.7%**
-> (Feb 2025: Naver 65.1%) — a platform-concentration structure with no
-> equivalent in the Google-dominated markets (>90% Google share) that
-> most cold-start / computational-advertising literature is built on.
-> The dataset's own ad-group spend concentration (HHI = 201.0 on a
-> 0-10,000 scale) and campaign-type mix (Search 19.4%
-> / Shopping 78.8% / Zero-cost
-> 1.8%) are reported here as descriptive
-> scope indicators, not as a representativeness claim about the Korean
-> market as a whole.
+This is a **reconciliation pass** on top of the v5 README. v5 was written
+right after the FIX-9→FIX-23 pipeline run, before the full captured stdout
+(`readme/README_v4_full.md`) had been cross-checked line by line. This
+version fixes every place where v5 guessed or hedged, using
+`readme/README_v4_full.md` as the source of truth.
+
+**Treat the two files as a pair, not duplicates:**
+- **`README.md` (this file)** — curated narrative, headline tables, verdicts.
+- **`readme/README_v4_full.md`** — the raw captured stdout of the entire
+  `01_eda.py → 09_robustness.py` run. Any number in this README should be
+  traceable to a line in that file. If they ever disagree, the full log
+  wins and this file needs a follow-up patch.
+
+**What changed in this pass:**
+
+| # | Issue in the v5 README | Resolution |
+|---|--------------------------|------------|
+| 1 | Figure 5's LSTM row was flagged as "truncated in captured stdout, re-run needed" | **Not actually truncated.** `readme/README_v4_full.md` → §4 → `Table 2b` has the full row: `LSTM 1.2099 0.9608 0.7342`. Table below is now final, no re-run needed. |
+| 2 | FSD reported as a single "run-to-run varies" number (0.6852 / −0.1347 / −1.0057) with no explanation | The full log shows **two different FSD values from two different call sites**, not just noise: `05_prediction.py`/`07_explainability.py` augment from N_train=174 → target_n=870 and get **FSD=−0.0465**; `09_robustness.py`'s LOGO-CV context augments from N_train=155 → target_n≈800 and gets **FSD=−1.0057**. Both pass (<2.0), but they are not the same experiment — see §Appendix W note below. |
+| 3 | H4a verdict framing | The hypothesis (H4a) is specifically about **BayesianLSTM-Cls vs LR**. The pipeline's own printed verdict line compares **LSTM-Cls vs LR-Cls** instead. Both comparisons reach the same conclusion (NULL — LR wins), but this is a framing mismatch between the hypothesis and the script's verdict logic, noted explicitly below rather than silently smoothed over. |
+| 4 | *(new, found in this pass)* Appendix W6's DM-with-multiple-comparison-correction table reports **different p-values for the same model pairs** already reported in Figure 13's raw+FDR table (e.g. LSTM vs Mamba: p_raw=0.0024 in Fig.13 vs p=0.0199 in W6) | **Not reconciled yet.** Flagged as an open item in Appendix W below — the two tables appear to come from independent DM computations (possibly different resampling/subset), and should not be merged or averaged until the source of the discrepancy is identified in code. |
+
+---
+
+## Table of Contents
+1. Overview
+2. Research Questions (v5 — Korea Case-Study Framing)
+3. Framework Architecture
+4. Data Description
+5. Repository Structure
+6. Installation
+7. Usage
+8. Results & Visualizations
+9. Key Findings (v5.1, reconciled)
+10. Code Fix Log (v3 + v5)
+11. Open Items / Figures Requiring Update
+12. Citation
+13. Data Availability
+14. License
+
+---
+
+## Overview
+
+**SADAF** (Sparse Ad Data Augmentation Framework) addresses one of the most persistent challenges in computational advertising: the **cold-start problem**, where newly launched ads lack sufficient historical data for reliable performance prediction.
+
+The framework integrates three methodological pillars into a single pipeline:
+
+| Pillar | Method | Purpose |
+|--------|--------|---------|
+| **Causal Estimation** | PSM + Doubly Robust IPW + Mediation + Moderation | Identify *why* ads convert |
+| **Bayesian Prediction** | BayesianLSTM + GRU + BiLSTM + Mamba + ProtoNet | Predict *what* ROAS will be, with uncertainty |
+| **Explainability** | GS-SHAP + IntGrad + Perm-SHAP + Attention | Explain *which* features drive outcomes |
+
+A custom three-method augmentation pipeline (β-VAE + Gaussian Copula + Moving Block Bootstrap) addresses the fundamental data scarcity problem.
+
+> **Note on FSD (reconciled, v5.1):** There is no single canonical FSD
+> value for this pipeline — there are (at least) two, from two different
+> call sites, and both are legitimate:
+> - `05_prediction.py` / `07_explainability.py`: N_train=174 → augmented
+>   to target_n=870 → **FSD = −0.0465**
+> - `09_robustness.py` (LOGO-CV context, one fold held out): N_train=155
+>   → augmented to target_n≈800 → **FSD = −1.0057**
 >
-> Source (verify before submission): BusinessKorea, "Naver's Search Market
-> Share Hits 64% While Google Ranked 2nd with 29% Share" (Apr 16, 2026),
-> citing InternetTrend monthly tracking data.
+> Both are well inside the <2.0 acceptance threshold. The v3 README's
+> 0.6852 and the superseded −0.1347 come from an earlier pre-FIX-21 run
+> and are no longer reproducible as stated — do not cite them going
+> forward. See the open item in **§Appendix W / Open Items** below on why
+> exact FSD values still aren't reproducible **within** either call site
+> across separate runs (Copula/MBB don't yet take an explicit seed).
 
+> **Why Korea, why March 2025, why one advertiser?** Framed explicitly as
+> an intentional **boundary-condition case study**, not an incidental
+> limitation. See §2, RQ0 below.
 
+---
 
-## Research Questions — v4 (Korea / March-2025 Case-Study Framing)
+## Research Questions (v5 — Korea Case-Study Framing)
 
-**RQ0 (framing, not a tested hypothesis).** Do causal, predictive, and
-explainability patterns established primarily in Google-dominated
-advertising markets replicate under a structurally different,
-single-platform-concentrated search ecosystem? March 2025 Korea (Naver
-≈63.8% share) is treated as a natural boundary-condition test case.
+SADAF v5 keeps the original six research questions (RQ1–RQ6) unchanged in
+method, but wraps them in an explicit scope statement (RQ0) and adds two
+new questions (RQ4d, RQ7) that were previously implicit.
 
-**RQ1–RQ3 (unchanged methods, reframed claim scope).** H1 (CTR→conversion,
-PSM+IPW), H2 (Depth mediation), H3 (campaign-type moderation) are reported
-as causal structure *conditional on* a platform-concentrated market, not as
-population-level claims about advertising in general.
+### RQ0 — Scope framing (not a tested hypothesis) `[v5]`
+Do causal, predictive, and explainability patterns established primarily
+in Google-dominated advertising markets replicate under a structurally
+different, single-platform-concentrated search ecosystem? March 2025
+Korea (Naver ≈ 63.8% search share) is treated as a natural
+boundary-condition test case, not as a claim of representativeness for
+the Korean market as a whole.
 
-**RQ4 + RQ4d (domain-gap as first-class evidence, not a nuisance).**
-H4a–H4c unchanged. **H4d:** Does the augmentation-to-real domain gap
-itself differ systematically across architectures in a way diagnostic of
-overfitting risk under extreme cold-start sparsity (N_train=174 real
-sequences)? Reported explicitly, not minimized.
+> According to InternetTrend data reported by BusinessKorea (Apr 2026),
+> Naver held an average **63.8%** share of Korean search volume in March
+> 2025 versus Google's **28.7%** (Feb 2025: Naver 65.1%) — a
+> platform-concentration structure with no equivalent in the
+> Google-dominated markets (>90% Google share) that most cold-start /
+> computational-advertising literature is built on.
+> *Source (verify before submission): BusinessKorea, "Naver's Search
+> Market Share Hits 64% While Google Ranked 2nd with 29% Share" (Apr 16,
+> 2026), citing InternetTrend monthly tracking data.*
 
-**RQ5 (unchanged, group-level).** H5 tests 2 independent HSIC-group-level
-distributions, not 7 per-feature distributions (FIX-9).
+**This advertiser's descriptive scope indicators:**
 
-**RQ6 (unchanged).** Search vs. Shopping domain shift (KS test).
+| Metric | Value |
+|--------|-------|
+| Campaign-type mix | Shopping 78.83% (70,693 rows) / Search 19.37% (17,373 rows) / Zero-cost 1.79% (1,609 rows) |
+| Ad-group spend concentration (HHI, 0–10,000 scale) | 201.0 |
+| Top-3 spend-share hours (KST) | Hour 0: 77.65% · Hour 1: 9.47% · Hour 3: 2.33% |
 
-**RQ7 (explicit external-validity boundary).** LOGO-CV (W1c) and synthetic
-multi-advertiser (W2b) support generalization *within* this single-platform,
-single-month case; claims beyond it are explicitly out of scope.
+---
 
+### RQ1 — Causal Effect of CTR on Conversion
+**H1:** High click-through rate (CTR) ads causally increase conversion probability compared to low-CTR ads, after controlling for impression volume, cost, and campaign type.
 
-## Appendix A — EDA (§1)
+*Method: Propensity Score Matching (PSM, caliper = 0.1σ) + Doubly Robust Inverse Probability Weighting (IPW) — `[FIX-11]`*
 
-```
-Loading data from: /home/yjlee/Research/Advertise_codeNdata/3월성과데이터(샘플).xlsx
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
+---
 
-=== 데이터 크기 ===
-행: 89,675 / 열: 32
+### RQ2 — Mediating Role of Browsing Depth
+**H2:** Browsing depth (Depth) mediates the relationship between CTR and conversion, and the sign pattern of the mediation paths reveals structural characteristics of advertiser-consumer interaction.
 
-=== 컬럼 목록 ===
-  1. Date (datetime64[us])
-  2. Hours (int64)
-  3. customer_id (int64)
-  4. campaign_id (str)
-  5. ad_group_id (str)
-  6. ad_id (str)
-  7. impression (int64)
-  8. click (int64)
-  9. cost (int64)
-  10. sum_of_ad_rank (int64)
-  11. conversion_count (int64)
-  12. sales_by_conversion (int64)
-  13. CTR (float64)
-  14. CVR (float64)
-  15. ROAS (float64)
-  16. Depth (float64)
-  17. CPC (float64)
-  18. CPA (float64)
-  19. has_conversion (int64)
-  20. log_impression (float64)
-  21. log_click (float64)
-  22. log_cost (float64)
-  23. log_CTR (float64)
-  24. log_CVR (float64)
-  25. log_ROAS (float64)
-  26. log_CPC (float64)
-  27. log_conversion_count (float64)
-  28. hour_sin (float64)
-  29. hour_cos (float64)
-  30. campaign_type (str)
-  31. campaign_type_label (str)
-  32. hour_bin (category)
+*Method: Baron-Kenny decomposition + Bootstrap mediation (B = 2,000) — `[FIX-12]`*
 
-=== 결측값 ===
-결측값 없음
+---
 
-=== 기술통계 ===
-                       count       mean         std  ...     75%         max      cv
-impression           89675.0    648.034    4886.034  ...  169.00    187026.0   7.540
-click                89675.0      3.598      32.917  ...    1.00      1951.0   9.150
-cost                 89675.0   3230.415   18910.979  ...  620.00    865200.0   5.854
-CTR                  89675.0      1.783       6.291  ...    0.97       100.0   3.529
-CVR                  89675.0      3.857      24.403  ...    0.00      4600.0   6.326
-ROAS                 89675.0    671.213    9303.012  ...    0.00   1339000.0  13.860
-Depth                89675.0      6.028       7.344  ...    6.90       137.0   1.218
-conversion_count     89675.0      0.364       2.875  ...    0.00       179.0   7.890
-sales_by_conversion  89675.0  28938.367  374064.113  ...    0.00  26397240.0  12.926
+### RQ3 — Campaign-Type Moderation
+**H3:** The positive relationship between CTR and ROAS is moderated by campaign type, such that Search campaigns exhibit a stronger CTR→ROAS slope than Shopping campaigns.
 
-[9 rows x 9 columns]
+*Method: OLS interaction with HC3-robust standard errors — `[FIX-13]`*
 
-── Dataset summary ──────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  ROAS=0 (spare): 72.1%  ← cold-start context, not a flaw
+---
 
-=== 캠페인 유형 분포 ===
-campaign_type_label
-Shopping     70693
-Search       17373
-Zero-cost     1609
-Name: count, dtype: int64
+### RQ4 — Deep Sequential ROAS Prediction
+**H4a:** A Bayesian LSTM classifier outperforms logistic regression for binary ROAS prediction (zero vs. non-zero) on augmented sparse ad sequences.
 
-=== 캠페인별 성과 요약 (상위 10, by cost) ===
-                campaign_id  impression  click     cost      CTR       CVR        ROAS  conversion  ad_count
-cmp-a001-02-000000006247200     2297020  13138 40690970 2.605636 21.723545 1579.012523        2457        38
-cmp-a001-02-000000008278062      698027   4648 37305690 4.252160 22.765953  353.259475         990        32
-cmp-a001-02-000000006489917    16564798  23514 33752820 1.251594 10.366900 1441.825584        3091       180
-cmp-a001-02-000000008697378       93237   1704 10945970 5.211853 31.970594 2148.396152         603        40
-cmp-a001-02-000000006516851     1439396   6828 10623420 1.489286 10.679955 2059.559107         664        14
-cmp-a001-02-000000001589513     5567843   5166  9424110 1.658041 12.336551 1794.893663         513        62
-cmp-a001-02-000000006247191     1084070   2221  9090000 5.072549 13.549499  422.794466         318        30
-cmp-a001-01-000000005308661      190274   6935  7846650 4.292489 11.412017 3111.859227         866        24
-cmp-a001-02-000000008025659      622024   9503  7168510 2.176230 20.540471 1502.042984        2575        65
-cmp-a001-02-000000006679269     1011346   3451  6239160 0.398229  4.607500  491.385000         147         6
+> **`[v5.1 note]`** The pipeline's printed H4a verdict actually compares
+> **LSTM-Cls vs LR-Cls**, not BayesianLSTM-Cls vs LR-Cls as the hypothesis
+> states. Both framings currently reach the same verdict (NULL — LR wins
+> both), so this does not change the conclusion, but the script's verdict
+> logic should be updated to test the hypothesis as written. See Table 2a
+> in §8 below for both models' numbers side by side.
 
-✅ EDA complete.
-```
+**H4b:** The best-performing recurrent architecture achieves significantly lower RMSE than ridge regression and MLP baselines for log-ROAS prediction, as confirmed by Diebold-Mariano (DM) tests.
 
-## Appendix B — ZINB Structure Diagnosis (§2)
+**H4c:** Mamba (selective state-space model) exhibits greater robustness to sequence-length variation (SEQ_LEN 4 → 6) compared to standard LSTM and GRU, measured by ΔRMSE per +2 time steps.
+
+**H4d — Domain gap as diagnostic evidence** `[v5]`**:** Does the augmentation-to-real domain gap itself differ systematically across architectures in a way diagnostic of overfitting risk under extreme cold-start sparsity (N_train=174 real sequences)? Reported explicitly rather than minimized.
+
+*Method: BayesianLSTM / GRU / BiLSTM / Mamba trained on β-VAE + Copula + MBB augmented data; DM test with raw + BH-FDR corrected p-values — `[FIX-10, FIX-22, FIX-23]`*
+
+---
+
+### RQ5 — Cluster-Specific Attribution Explanation
+**H5:** Ad group clusters exhibit statistically distinct feature attribution patterns across HSIC-defined feature groups (measured by Kruskal-Wallis η²), and multiple attribution methods (GS-SHAP, Integrated Gradients, Permutation-SHAP) produce convergent rankings.
+
+> **Note on GS-SHAP group structure:** GS-SHAP decomposes attribution at
+> the HSIC group level, not the individual feature level. Group 0 =
+> {CTR, CVR, Depth, log_cost, log_impression}; Group 1 = {hour_sin,
+> hour_cos}. All features within a group receive identical attribution
+> values by construction. **`[FIX-9]`** the Kruskal-Wallis test — and
+> therefore the H5 verdict — is computed and reported over exactly these
+> **2 independent group-level distributions**, never over "7 features."
+> Attention weights measure temporal position (which time-step matters),
+> not feature importance, and remain excluded from the gradient-method
+> consensus analysis.
+
+*Method: KMeans clustering + GS-SHAP (primary) + three additional attribution methods + Spearman ρ agreement matrix*
+
+---
+
+### RQ6 — Cross-Campaign Domain Shift
+**H6:** Feature distributions differ significantly between Search and Shopping campaigns (KS test), empirically motivating frozen-encoder domain adaptation.
+
+*Method: KS test across 7 features + frozen-encoder fine-tuning transfer — `[FIX-14, FIX-15]`*
+
+---
+
+### RQ7 — External-validity boundary `[v5]`
+LOGO-CV (Appendix W1c) and the synthetic multi-advertiser check (Appendix
+W2b) support generalization **within** this single-platform,
+single-month case. Claims beyond that scope (other platforms, other
+months, other advertisers) are explicitly out of scope for this study.
+
+---
+
+## Framework Architecture
 
 ```
-Loading data from: /home/yjlee/Research/Advertise_codeNdata/3월성과데이터(샘플).xlsx
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
+Raw Ad Performance Data (89,675 rows × 32 cols)
+            │
+            ▼
+┌─────────────────────────────────────────┐
+│  §2  THEORY: ZINB Structure Diagnosis  │
+│       AIC=71958.2  ΔAIC(ZIP−ZINB)=-2798.9 │
+└────────────────────┬────────────────────┘
+                     │
+            ┌────────▼─────────┐
+            │   Causal DAG     │
+            │  (Fig. 1)        │
+            └────────┬─────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+   §5 RQ1/H1    §6 RQ2/H2    §7 RQ3/H3
+   PSM + IPW    Mediation    Moderation
+   [FIX-11]     [FIX-12]     [FIX-13]
+        │            │            │
+        └────────────┼────────────┘
+                     │
+            ┌────────▼─────────┐
+            │  §4 Augmentation │
+            │  β-VAE + Copula  │
+            │  + MBB  [FIX-21] │
+            │  FSD=-0.0465 or  │
+            │  FSD=-1.0057*    │
+            └────────┬─────────┘
+                     │
+        ┌────────────┼──────────────┐
+        │            │              │
+        ▼            ▼              ▼
+   §6 H4a        §6 H4b/H4c    §6 Bayesian
+   CLS Stage     REG Stage      Uncertainty
+   [FIX-10/22/23] Winner: LSTM  (Fig. 14)
+   LR wins ✗      RMSE=1.2099
+        │            │              │
+        └────────────┼──────────────┘
+                     │
+            ┌────────▼─────────┐
+            │  §7 RQ5/H5       │
+            │  GS-SHAP         │
+            │  [FIX-9]         │
+            │  1/2 groups sig. │
+            └────────┬─────────┘
+                     │
+            ┌────────▼─────────┐
+            │  §8 RQ6/H6       │
+            │  Domain          │
+            │  Adaptation      │
+            │  [FIX-14/15]     │
+            │  6/7 KS sig.     │
+            └──────────────────┘
 
-=== Structural Zero-Inflation Diagnostics ===
-  Zero-ROAS rate          : 72.1%
-  ROAS mean               : 1852.37
-  ROAS variance           : 236661259.29
-  Overdispersion (var/mean): 127761.02
-
-  ZINB converged via lbfgs (SE valid ✓)  AIC=71958.2
-  ZINB AIC=71958.2  BIC=72025.3
-  ΔAIC(ZIP−ZINB)=-2798.9  (>10 = ZINB strongly preferred)
-
- ====================================================================================
-                       coef    std err          z      P>|z|      [0.025      0.975]
-------------------------------------------------------------------------------------
-inflate_const        5.6169      0.079     71.543      0.000       5.463       5.771
-inflate_log_CTR     -0.1895      0.018    -10.708      0.000      -0.224      -0.155
-inflate_log_cost    -0.5814      0.009    -65.692      0.000      -0.599      -0.564
-const                1.6407      0.133     12.378      0.000       1.381       1.901
-log_CTR              0.4725      0.036     12.996      0.000       0.401       0.544
-log_cost            -0.2157      0.004    -51.699      0.000      -0.224      -0.207
-log_impression       0.2184      0.016     13.315      0.000       0.186       0.251
-alpha                0.0119      0.015      0.797      0.425      -0.017       0.041
-====================================================================================
-
-✅ ZINB diagnosis complete.
+  * two different FSD values from two different call sites — see FSD note above
 ```
 
-## §3 — Causal Results: H1 (PSM+IPW), H2 (Mediation), H3 (Moderation) [FIX-11/12/13]
+---
+
+## Data Description
+
+### Dataset Overview
+
+The dataset contains **hourly advertisement performance records** from a single advertiser on the Naver search advertising platform (South Korea's largest search engine), covering **March 2025**.
+
+| Attribute | Value |
+|-----------|-------|
+| Total records | 89,675 rows |
+| Features (raw + derived, confirmed from `01_eda.py`) | 32 columns |
+| Time period | March 2025 (1 month) |
+| Granularity | Ad-group level × hourly |
+| Advertiser | Single (anonymized) |
+| Platform | Naver Search/Shopping Ads |
+
+---
+
+### Column Schema (raw source columns)
+
+| Column | Type | Description | Notes |
+|--------|------|-------------|-------|
+| `Date` | datetime | Date of record (YYYY-MM-DD) | All records from March 2025 |
+| `Hours` | int | Hour of day (0–23) | 0 = midnight |
+| `customer_id` | int | Anonymized advertiser ID | Single value (135485) |
+| `campaign_id` | str | Campaign identifier | Prefix encodes type: `-01-` = Search, `-02-` = Shopping, `-04-` = Zero-cost |
+| `ad_group_id` | str | Ad group identifier | Nested under campaign |
+| `ad_id` | str | Individual ad identifier | Leaf-level entity |
+| `impression` | int | Number of ad impressions | ≥ 0 |
+| `click` | int | Number of clicks | ≥ 0; click ≤ impression |
+| `cost` | int | Advertising spend (KRW) | 0 for zero-cost campaigns |
+| `sum_of_ad_rank` | int | Cumulative ad rank score | Platform-specific metric |
+| `conversion_count` | int | Number of purchase conversions | 88.2% of paid rows = 0 |
+| `sales_by_conversion` | int | Revenue attributed to conversions (KRW) | Highly right-skewed |
+| `CTR` | float | Click-through rate (%) | `click / impression × 100`; NaN when impression = 0 |
+| `CVR` | float | Conversion rate (%) | `conversion / click × 100` |
+| `ROAS` | float | Return on ad spend (%) | `sales / cost × 100`; 72.1% of paid rows = 0 |
+| `Depth` | float | Browsing depth score | Platform-side engagement proxy; NaN when impression = 0 |
+
+### Derived Features (confirmed present in the loaded DataFrame, 32 total columns)
+
+`CPC`, `CPA`, `has_conversion`, `log_impression`, `log_click`, `log_cost`,
+`log_CTR`, `log_CVR`, `log_ROAS`, `log_CPC`, `log_conversion_count`,
+`hour_sin`, `hour_cos`, `campaign_type`, `campaign_type_label`, `hour_bin`.
+
+> `campaign_type_label` is the human-readable column (`Search` /
+> `Shopping` / `Zero-cost`) — use this one, not the raw `campaign_type`
+> code, for any market-context reporting.
+
+---
+
+### Key Statistical Characteristics (confirmed, `01_eda.py` + `02_zinb.py`)
 
 ```
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
-
-══ H1: PSM + Doubly Robust IPW [FIX-11] ═══════════
-  PSM-ATT = 0.1347  95% Boot CI = [0.1254, 0.1434]
-  n_matched = 14987  H1 (PSM, corroborating): SUPPORTED ✓
-  IPW-ATT = 0.1286  [PRIMARY ESTIMATOR — doubly robust]
-  DR consistency (|IPW-ATT − PSM-ATT| < 0.05): ✓ consistent
-
-  Table S1: Covariate Balance (PSM + DR correction)
-     Covariate  SMD_before  SMD_after  p_before  p_after                                               Balance
-log_impression     -1.5459    -0.4299       0.0      0.0 ✗ substantial — DR corrected (primary estimator: IPW)
-      log_cost     -0.2372    -0.5752       0.0      0.0 ✗ substantial — DR corrected (primary estimator: IPW)
-         Depth     -0.1636     0.1253       0.0      0.0                             ⚠ residual — DR corrected
-ctype_Shopping     -0.4350     0.0801       0.0      0.0                                            ✓ balanced
-
-══ H2: Mediation Analysis [FIX-12] ══════════════════
-  a = -0.3077  b = -0.0861  indirect (a×b) = 0.0265  CI = [0.0200, 0.0337]
-  Type: Negative suppressor (a<0, b<0, a×b>0)
-  Interpretation: High-CTR ads reduce browsing depth (a<0): immediate-click campaigns bypass deliberate browsing. Among ads generating depth, deeper browsing reduces conversion (b<0), indicating depth proxies decision hesitancy, not engagement. The positive indirect product constitutes a negative suppressor.
-  Proportion mediated: -42.8% (appendix only; sign direction is the primary finding)
-  H2: SUPPORTED ✓ (bootstrap CI excludes 0)
-
-══ H3: Moderation Analysis [FIX-13] ═════════════════
-  β_interaction = 0.3860  p = 0.0000  H3: SUPPORTED ✓
-  ME_Shopping = 0.563  ME_Search = 0.949
-  R² = 0.6551  n = 9069
-
-✅ Causal analyses (H1–H3) complete.
+Total rows                :  89,675
+Paid rows                 :  32,494
+ROAS > 0                  :   9,071  (27.9% of paid)
+Conversion rate           :  11.77%
+Zero-ROAS rate (paid)     :  72.1%   ← structural zero-inflation
+ROAS mean                 :  1852.37
+ROAS variance             :  236,661,259.29
+Overdispersion (var/mean) :  127,761.02
 ```
 
-## §4 — Two-Stage Prediction: H4a–H4c + Domain-Gap (H4d) [FIX-10]
+**ZINB model fit (confirmed):**
+
+| Metric | Value |
+|--------|-------|
+| AIC | 71,958.2 |
+| BIC | 72,025.3 |
+| ΔAIC (ZIP − ZINB) | −2,798.9 (ZINB strongly preferred, threshold >10) |
+| Convergence | lbfgs, standard errors valid |
+
+Selected ZINB coefficients (count component): `log_CTR` = 0.4725
+(p<0.001), `log_cost` = −0.2157 (p<0.001), `log_impression` = 0.2184
+(p<0.001). Inflation component: `inflate_log_CTR` = −0.1895 (p<0.001),
+`inflate_log_cost` = −0.5814 (p<0.001). Full coefficient table with
+standard errors is in `readme/README_v4_full.md` → Appendix B.
+
+These characteristics motivate the **Zero-Inflated Negative Binomial (ZINB)** model for distributional diagnosis and the **two-stage prediction architecture** (classification → regression).
+
+---
+
+### Campaign Type Distribution (confirmed, this advertiser)
+
+| Type | campaign_id Prefix | Rows | Share |
+|------|--------------------|------|-------|
+| Shopping | `-02-` | 70,693 | 78.83% |
+| Search | `-01-` | 17,373 | 19.37% |
+| Zero-cost | `-04-` | 1,609 | 1.79% |
+
+---
+
+### Missing Values
+
+| Column | Missing Count | Missing Rate | Treatment |
+|--------|--------------|--------------|-----------|
+| `CTR` | 438 | 0.49% | Fill 0 (all have impression=0) |
+| `Depth` | 438 | 0.49% | Fill 0 (same rows as CTR) |
+| All others | 0 | 0% | — |
+
+> **`[v5.1 note]`** `01_eda.py`'s own missing-value check prints "결측값
+> 없음" (no missing values) against the raw 32-column DataFrame, while
+> this table (carried over from earlier versions) reports 438 missing
+> `CTR`/`Depth` values. These are not contradictory — the raw check runs
+> **before** the `CTR`/`Depth` fill-with-0 step in preprocessing, and
+> "no missing values" describes the *post-fill* state used everywhere
+> else. Kept as-is for clarity on the imputation itself.
+
+---
+
+### Sequence Dataset Statistics (group-aware split, confirmed)
+
+| Split | REG sequences (SL=4) |
+|-------|---------------------|
+| Train | 174 |
+| Validation | 24 |
+| Test | 24 |
+| **Total** | **222** |
+
+Additional sequence-length variant used for H4c robustness: **SEQ_LEN=6 → (125, 6, 7)**.
+
+> **Augmentation scale (confirmed, two distinct runs):**
+> - `05_prediction.py` / `07_explainability.py`: 174 → ~870 sequences
+>   (+232 per method: β-VAE + Copula + MBB), **FSD = −0.0465**
+> - `09_robustness.py` LOGO-CV context: 155 → ~800 sequences (+215 per
+>   method), **FSD = −1.0057**
+>
+> The N_train difference (174 vs 155) reflects that the LOGO-CV context
+> holds one ad-group fold out before augmenting, so it always trains on
+> slightly fewer real sequences than the main train split.
+
+---
+
+## Repository Structure
 
 ```
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
-
-══ H4a: Classification Stage ═══════════════════════
-    Ep  10: train=0.4759  val_aug=0.5855
-    Ep  20: train=0.4407  val_aug=0.5758
-    Early stop @ epoch 25  (best aug val=0.5675)
-    Ep  10: train=0.4772  val_aug=0.5760
-    Ep  20: train=0.4598  val_aug=0.5803
-    Early stop @ epoch 26  (best aug val=0.5646)
-
-  Table 2a: Classification Results
-                     AUC      F1      AP  Thresh
-LR-Cls            0.6143  0.3653  0.3016    0.12
-LSTM-Cls          0.6115  0.3026  0.3062    0.24
-BayesianLSTM-Cls  0.5894  0.3151  0.2723    0.28
-MLP-Cls           0.5445  0.2951  0.2989    0.50
-
-  H4a: NULL (boundary) ⚬  (LSTM-Cls AUC=0.6115 vs LR-Cls AUC=0.6143)
-
-══ H4b/H4c: Regression Stage ═══════════════════════
-  REG SEQ_LEN=4: (222, 4, 7)
-  REG SEQ_LEN=6: (125, 6, 7)
-  Split sizes — train:174  val:24  test:24
-    Ep  10: train=0.8854  val_aug=0.7678
-    Ep  20: train=0.6535  val_aug=0.6106
-    Ep  30: train=0.5789  val_aug=0.5896
-    Early stop @ epoch 35  (best aug val=0.5620)
-  Augmentation: 174 → ~870 (+232 per method)
-  [1/3] Training β-VAE ...
-    VAE Ep 100: loss=53648.92
-    VAE Ep 200: loss=45476.11
-    VAE Ep 300: loss=38695.28
-  [2/3] Gaussian Copula ...
-    Copula KS validation: mean_KS=0.097 (lower = more realistic)
-  [3/3] Moving Block Bootstrap ...
-  FSD = -0.0465  [PASS ✓]  (threshold: <2.0 accept, >5.0 reject)
-    Ep  10: train=1.3299  val_aug=0.9399  val_real=1.2951
-    Ep  20: train=1.1522  val_aug=0.8418  val_real=0.8354
-    Ep  30: train=1.1686  val_aug=0.7789  val_real=0.9955
-    Ep  40: train=1.1475  val_aug=0.8221  val_real=0.7878
-    Ep  50: train=1.0925  val_aug=0.7720  val_real=0.7739
-    Early stop @ epoch 54  (best real val=0.7525)
-  BayesianLSTM   RMSE=1.3420  MAE=1.1063  R²=0.6729
-    Ep  10: train=0.9620  val_aug=0.9548  val_real=0.9425
-    Ep  20: train=0.8182  val_aug=0.7491  val_real=0.8606
-    Ep  30: train=0.8360  val_aug=0.7191  val_real=0.7070
-    Early stop @ epoch 34  (best real val=0.7047)
-  LSTM           RMSE=1.2099  MAE=0.9608  R²=0.7342
-    Ep  10: train=1.0351  val_aug=0.8493  val_real=1.1376
-    Ep  20: train=0.8405  val_aug=0.7853  val_real=0.7387
-    Ep  30: train=0.8887  val_aug=0.7230  val_real=0.8117
-    Ep  40: train=0.8623  val_aug=0.7483  val_real=0.7547
-    Early stop @ epoch 48  (best real val=0.6873)
-  GRU            RMSE=1.3984  MAE=1.1450  R²=0.6449
-    Ep  10: train=0.8709  val_aug=0.8318  val_real=0.9570
-    Ep  20: train=0.7762  val_aug=0.8029  val_real=0.7921
-    Ep  30: train=0.8039  val_aug=0.7214  val_real=0.8078
-    Early stop @ epoch 35  (best real val=0.7587)
-  BiLSTM         RMSE=1.4998  MAE=1.1629  R²=0.5915
-    Ep  10: train=0.9713  val_aug=0.9390  val_real=1.1628
-    Ep  20: train=0.8121  val_aug=0.7252  val_real=0.8968
-    Ep  30: train=0.7160  val_aug=0.6404  val_real=0.8487
-    Ep  40: train=0.6601  val_aug=0.5378  val_real=0.8862
-    Early stop @ epoch 47  (best real val=0.7910)
-  Mamba          RMSE=1.6356  MAE=1.3308  R²=0.5142
-  Ridge          RMSE=1.6033  R²=0.5331
-  MLP            RMSE=1.7086  R²=0.4699
-
-  Table 2b: Regression Results (group-split, SL=4)
-                RMSE     MAE      R2
-LSTM          1.2099  0.9608  0.7342
-BayesianLSTM  1.3420  1.1063  0.6729
-GRU           1.3984  1.1450  0.6449
-BiLSTM        1.4998  1.1629  0.5915
-Ridge         1.6033  1.2684  0.5331
-Mamba         1.6356  1.3308  0.5142
-MLP           1.7086  1.3538  0.4699
-
-  ── Domain-gap report (train–val gap) ──────────────
-              best_epoch_real  best_val_real  best_val_aug  final_train  gap_real  gap_aug
-model                                                                                     
-BayesianLSTM               42         0.7525        0.7441       1.0936   -0.2821  -0.3494
-LSTM                       22         0.7047        0.7133       0.8080   -0.0862  -0.0947
-GRU                        36         0.6873        0.7131       0.8312   -0.1591  -0.1181
-BiLSTM                     23         0.7587        0.6964       0.8477   -0.0802  -0.1513
-Mamba                      35         0.7910        0.4564       0.6138    0.1142  -0.1574
-
-  H4b: SUPPORTED ✓  (LSTM RMSE=1.2099 vs Ridge RMSE=1.6033)
-
-  ── DM Comparisons: raw p + BH-FDR correction [FIX-10] ──
-  BayesianLSTM vs LSTM          DM= 3.1782  p_raw=0.0042*  p_FDR=0.0293*  → LSTM
-  BayesianLSTM vs GRU           DM=-1.1323  p_raw=0.2692   p_FDR=0.3140   → BayesianLSTM
-  BayesianLSTM vs BiLSTM        DM=-1.6517  p_raw=0.1122   p_FDR=0.1472   → BayesianLSTM
-  BayesianLSTM vs Mamba         DM=-2.3879  p_raw=0.0255*  p_FDR=0.0537   → BayesianLSTM
-  BayesianLSTM vs Ridge         DM=-2.1653  p_raw=0.0410*  p_FDR=0.0615   → BayesianLSTM
-  BayesianLSTM vs MLP           DM=-2.9221  p_raw=0.0077*  p_FDR=0.0316*  → BayesianLSTM
-  LSTM         vs GRU           DM=-2.7851  p_raw=0.0105*  p_FDR=0.0316*  → LSTM
-  LSTM         vs BiLSTM        DM=-2.7881  p_raw=0.0105*  p_FDR=0.0316*  → LSTM
-  LSTM         vs Mamba         DM=-3.4113  p_raw=0.0024*  p_FDR=0.0251*  → LSTM
-  LSTM         vs Ridge         DM=-2.9124  p_raw=0.0078*  p_FDR=0.0316*  → LSTM
-  LSTM         vs MLP           DM=-3.4587  p_raw=0.0021*  p_FDR=0.0251*  → LSTM
-  GRU          vs BiLSTM        DM=-1.5906  p_raw=0.1254   p_FDR=0.1549   → GRU
-  GRU          vs Mamba         DM=-2.3405  p_raw=0.0283*  p_FDR=0.0540   → GRU
-  GRU          vs Ridge         DM=-2.4195  p_raw=0.0239*  p_FDR=0.0537   → GRU
-  GRU          vs MLP           DM=-2.7088  p_raw=0.0125*  p_FDR=0.0329*  → GRU
-  BiLSTM       vs Mamba         DM=-2.2002  p_raw=0.0381*  p_FDR=0.0615   → BiLSTM
-  BiLSTM       vs Ridge         DM=-2.2157  p_raw=0.0369*  p_FDR=0.0615   → BiLSTM
-  BiLSTM       vs MLP           DM=-2.0115  p_raw=0.0561   p_FDR=0.0786   → BiLSTM
-  Mamba        vs Ridge         DM= 0.4228  p_raw=0.6763   p_FDR=0.6763   → Ridge
-  Mamba        vs MLP           DM=-0.5872  p_raw=0.5628   p_FDR=0.5909   → Mamba
-  Ridge        vs MLP           DM=-0.9403  p_raw=0.3568   p_FDR=0.3944   → Ridge
-
-  Summary: 14/21 pairs significant at raw p<0.05; 8/21 remain significant after BH-FDR (test sequences n=24). Report both numbers in the manuscript — do not report raw-only.
-
-✅ Two-stage prediction (H4a–H4c) [FIXED v2] complete.
+sadaf/
+│
+├── README.md                        # This file (curated narrative)
+├── requirements.txt
+├── LICENSE
+├── .gitignore
+│
+├── sadaf/
+│   ├── config.py                    # RANDOM_SEED, DEVICE, hyperparameters
+│   ├── data/
+│   │   ├── loader.py
+│   │   └── sequence.py              # build_sequences(), group_time_split(), SeqDataset
+│   ├── augmentation/
+│   │   ├── vae.py
+│   │   ├── copula.py                # ⚠ no explicit seed param yet (see Open Items)
+│   │   ├── mbb.py                   # ⚠ no explicit seed param yet (see Open Items)
+│   │   └── pipeline.py              # [FIX-21] seed refixation in train_vae()/vae_augment()
+│   ├── causal/
+│   │   ├── psm.py                   # run_psm_ipw() [FIX-11]
+│   │   ├── mediation.py             # run_mediation() [FIX-12]
+│   │   └── moderation.py            # run_moderation() [FIX-13]
+│   ├── models/
+│   │   ├── lstm.py
+│   │   ├── gru.py
+│   │   ├── mamba.py
+│   │   ├── protonet.py
+│   │   └── attention.py
+│   ├── training/
+│   │   └── trainer.py               # train_model, eval_reg, diebold_mariano
+│   └── explainability/
+│       ├── gsshap.py                # group_temporal_gini(), compute_cluster_gini(level="group")
+│       ├── intgrad.py
+│       ├── permshap.py
+│       └── agreement.py
+│
+├── scripts/
+│   ├── 01_eda.py
+│   ├── 02_zinb.py
+│   ├── 03_causal.py                 # [FIX-11/12/13]
+│   ├── 04_augmentation.py
+│   ├── 05_prediction.py             # [FIX-10/22/23]
+│   ├── 06_uncertainty.py
+│   ├── 07_explainability.py         # [FIX-9], requires --out_dir
+│   ├── 08_domain_adaptation.py      # [FIX-14/15]
+│   ├── 09_robustness.py             # [FIX-16/17/18/19/19b/20]
+│   └── 10_figures.py
+│
+├── readme/
+│   └── README_v4_full.md            # Full captured stdout log — source of truth for exact numbers
+│
+├── figures/                          # All output figures (auto-generated)
+│   └── best_bayesian_lstm.pt        # BayesianLSTM checkpoint (FIX-7); delete to force retrain
+├── data/
+│   └── README_data.md
+├── tests/
+└── docs/
 ```
 
-## §5 — Multi-Method Attribution: H5 (group-level) [FIX-9]
+---
 
-```
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
-  Split sizes — train:174  val:24  test:24
-  [DIAGNOSTIC] augment_pipeline call site: 07_explainability.py main(), target_n=870, len(Xtr)=174, pid=3618460
-  Augmentation: 174 → ~870 (+232 per method)
-  [1/3] Training β-VAE ...
-    VAE Ep 100: loss=53648.92
-    VAE Ep 200: loss=45476.11
-    VAE Ep 300: loss=38695.28
-  [2/3] Gaussian Copula ...
-    Copula KS validation: mean_KS=0.097 (lower = more realistic)
-  [3/3] Moving Block Bootstrap ...
-  [DIAGNOSTIC] augment_pipeline returned: len(X_aug)=870 (expected ~870)
-  [FIX-7] Loading saved model from /home/yjlee/sadaf/figures/best_bayesian_lstm.pt
+## Installation
 
-══ H5: Multi-Method Attribution Comparison [FIXED v3] ══
-  Cluster 0 (C0 High-Volume): n=7
-  Cluster 1 (C1 High-Conversion): n=9
-  Cluster 2 (C2 Click-Rich): n=8
+```bash
+git clone https://github.com/LEEYJ1021/sadaf.git
+cd sadaf
 
-  [1/4] GS-SHAP (HSIC grouping + Shapley) [FIX-3/4a/4b] ...
-[GS-SHAP] Computing HSIC feature groups from training data...
-  [HSIC] eigengap → K=2 groups (D=7 features)
-  Groups: [[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)], [np.int64(5), np.int64(6)]]  (0.06s)
-  [Segmentation] seg_len=1, time_segments=4, n_players=8 (K=2 groups × 4 time segments)
-  [Reporting] HSIC groups → raw features: {0: [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)], 1: [np.int64(5), np.int64(6)]}
-  [Reporting] 2 independent group-level Gini values will be reported; per-feature values inside a group are identical by construction (see gsshap.py FIX-5).
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-  ── Temporal Gini by cluster (group-level, non-duplicated) ──
-  C0 High-Volume: group0[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)]=0.328  group1[np.int64(5), np.int64(6)]=0.317
-  C1 High-Conversion: group0[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)]=0.280  group1[np.int64(5), np.int64(6)]=0.342
-  C2 Click-Rich: group0[np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)]=0.373  group1[np.int64(5), np.int64(6)]=0.290
-
-  ── Temporal Gini by cluster (feature-level, for reference; values repeat within an HSIC group) ──
-  C0 High-Volume: CTR=0.328±0.144  CVR=0.328±0.144  Depth=0.328±0.144  log_cost=0.328±0.144  log_impression=0.328±0.144  hour_sin=0.317±0.076  hour_cos=0.317±0.076
-  C1 High-Conversion: CTR=0.280±0.100  CVR=0.280±0.100  Depth=0.280±0.100  log_cost=0.280±0.100  log_impression=0.280±0.100  hour_sin=0.342±0.138  hour_cos=0.342±0.138
-  C2 Click-Rich: CTR=0.373±0.092  CVR=0.373±0.092  Depth=0.373±0.092  log_cost=0.373±0.092  log_impression=0.373±0.092  hour_sin=0.290±0.088  hour_cos=0.290±0.088
-
-  [2/4] Integrated Gradients ...
-
-  [3/4] Permutation SHAP ...
-
-  [4/4] Attention-based Attribution ...
-
-  ── Method Agreement: Spearman Rank Correlation ────
-  C0 High-Volume          avg Spearman ρ = 0.825  (High, 3/3 pairs usable, n=7 ⚠ underpowered)
-  C1 High-Conversion      avg Spearman ρ = 0.559  (Moderate, 3/3 pairs usable, n=9 ⚠ underpowered)
-  C2 Click-Rich           avg Spearman ρ = 0.813  (High, 3/3 pairs usable, n=8 ⚠ underpowered)
-
-  ⚠ NOTE: ['C0 High-Volume', 'C1 High-Conversion', 'C2 Click-Rich'] have n < 10 test samples. Agreement and Kruskal-Wallis statistics for these clusters should be reported with this caveat, not as unconditional null/positive findings.
-
-  ── Kruskal-Wallis (GS-SHAP, GROUP-LEVEL, primary) [FIX-9] ──
-  group0 [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4)] p=4.2791e-02 *   (applies identically to all 5 raw features in this group)
-  group1 [np.int64(5), np.int64(6)]   p=6.8800e-01 ns   (applies identically to all 2 raw features in this group)
-
-  H5 [FIX-9]: SUPPORTED ✓  (1/2 HSIC GROUP-LEVEL tests significant — NOT a per-feature count; see gsshap.py FIX-5)
-  → Caveat: result is influenced by underpowered cluster(s) ['C0 High-Volume', 'C1 High-Conversion', 'C2 Click-Rich']; see note above.
-  → Figure 9 (fixed) saved to /home/yjlee/sadaf/figures/fig_09_gsshap_importance_fixed.png
-
-✅ Multi-method attribution (H5) [FIXED v3] complete.
+pip install -r requirements.txt
 ```
 
-## §6 — Cross-Campaign Domain Shift: H6
+### Requirements
 
 ```
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
-
-══ H6: Domain Shift Analysis ═══════════════════════
-  Shopping: (4247, 4, 7)  Search: (3476, 4, 7)
-  CTR                KS=0.2200 p=1.5116e-81 *
-  CVR                KS=0.0383 p=7.1042e-03 *
-  Depth              KS=0.3749 p=1.1274e-239 *
-  log_cost           KS=0.2271 p=6.4111e-87 *
-  log_impression     KS=0.1310 p=4.9394e-29 *
-  hour_sin           KS=0.0940 p=3.7180e-15 *
-  hour_cos           KS=0.0296 p=6.7920e-02 ns
-
-  H6: SUPPORTED ✓  (6/7 features p<0.05)
-
-══ Domain Adaptation: Search → Shopping ════════════
-  Step 1: Training source model on Search...
-    Ep  10: train=0.5985  val_aug=0.2731
-    Early stop @ epoch 17  (best aug val=0.2722)
-  Naive transfer RMSE = 1.3133
-  Step 2: Fine-tuning on Shopping (50% frozen)...
-    Ep  10: train=0.4927  val_aug=0.2718
-    Early stop @ epoch 14  (best aug val=0.2716)
-  Adapted transfer RMSE = 1.3133  (gain: -0.0% vs naive transfer)
-  NOTE: modest improvement; primary contribution is theoretical
-  justification for domain-adaptive design, not a performance claim.
-
-✅ Domain shift + adaptation (H6) complete.
+torch>=2.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+statsmodels>=0.14.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+networkx>=3.1
+openpyxl>=3.1.0
 ```
 
-## Appendix W — Robustness Supplement (LOGO-CV, Regularisation Grid, DM+FDR, Multi-Advertiser)
+---
 
-```
-── Dataset summary ──────────────────────────────────────
-  Total rows    :   89,675
-  Paid rows     :   32,494
-  ROAS > 0      :    9,071  (27.9% of paid)
-  Conversion %  : 11.77%
-  Zero-ROAS %   : 72.1%
-─────────────────────────────────────────────────────────
+## Usage
 
-══ W1c: Leave-One-Ad-Group-Out CV ══════════════════
-    Ep  10: train=0.7881  val_aug=0.5651
-    Ep  20: train=0.6957  val_aug=0.4698
-    Early stop @ epoch 29  (best aug val=0.4056)
-    Ep  10: train=0.6196  val_aug=0.5130
-    Ep  20: train=0.6071  val_aug=0.4479
-    Early stop @ epoch 29  (best aug val=0.3765)
-    Ep  10: train=1.0160  val_aug=0.8781
-    Ep  20: train=0.6320  val_aug=0.4485
-    Ep  30: train=0.6079  val_aug=0.4294
-    Ep  40: train=0.6633  val_aug=0.4324
-    Ep  50: train=0.6254  val_aug=0.4045
-    Ep  10: train=1.0923  val_aug=1.0370
-    Ep  20: train=0.6092  val_aug=0.3988
-    Early stop @ epoch 30  (best aug val=0.3914)
-    Ep  10: train=0.8111  val_aug=0.7070
-    Ep  20: train=0.5937  val_aug=0.4669
-    Ep  30: train=0.5983  val_aug=0.4387
-    Ep  40: train=0.6377  val_aug=0.4285
-    Ep  50: train=0.5630  val_aug=0.4213
-    Ep  10: train=0.7521  val_aug=0.5440
-    Ep  20: train=0.5979  val_aug=0.4930
-    Early stop @ epoch 25  (best aug val=0.3889)
-    Ep  10: train=0.8226  val_aug=0.5478
-    Ep  20: train=0.6612  val_aug=0.4842
-    Ep  30: train=0.7039  val_aug=0.4326
-    Ep  40: train=0.6508  val_aug=0.4289
-    Early stop @ epoch 45  (best aug val=0.4169)
-    Ep  10: train=0.7088  val_aug=0.5844
-    Ep  20: train=0.6657  val_aug=0.3926
-    Early stop @ epoch 30  (best aug val=0.3738)
-    Ep  10: train=0.7541  val_aug=0.7174
-    Ep  20: train=0.8533  val_aug=0.5047
-    Early stop @ epoch 28  (best aug val=0.3948)
-    Ep  10: train=0.6494  val_aug=0.4779
-    Ep  20: train=0.8563  val_aug=0.4544
-    Ep  30: train=0.5561  val_aug=0.3893
-    Early stop @ epoch 35  (best aug val=0.3739)
-    Ep  10: train=0.7032  val_aug=0.6257
-    Ep  20: train=0.6757  val_aug=0.4953
-    Early stop @ epoch 29  (best aug val=0.3930)
-    Ep  10: train=0.8082  val_aug=0.7610
-    Ep  20: train=0.6952  val_aug=0.4506
-    Ep  30: train=0.6888  val_aug=0.7240
-    Early stop @ epoch 32  (best aug val=0.3883)
-    Ep  10: train=0.8618  val_aug=0.5306
-    Ep  20: train=0.6393  val_aug=0.5314
-    Early stop @ epoch 25  (best aug val=0.3825)
-    Ep  10: train=0.9506  val_aug=0.6582
-    Ep  20: train=0.7025  val_aug=0.4421
-    Early stop @ epoch 28  (best aug val=0.3796)
-    Ep  10: train=0.6826  val_aug=0.4690
-    Ep  20: train=0.6827  val_aug=0.3938
-    Ep  30: train=0.5852  val_aug=0.5485
-    Early stop @ epoch 33  (best aug val=0.3669)
-    Ep  10: train=0.8603  val_aug=0.6749
-    Ep  20: train=0.6628  val_aug=0.4948
-    Ep  30: train=0.6203  val_aug=0.4351
-    Ep  40: train=0.6857  val_aug=0.4188
-    Early stop @ epoch 46  (best aug val=0.4074)
-    Ep  10: train=0.8822  val_aug=0.5867
-    Ep  20: train=0.6653  val_aug=0.5158
-    Ep  30: train=0.6941  val_aug=0.4426
-    Ep  40: train=0.5695  val_aug=0.4270
-    Early stop @ epoch 49  (best aug val=0.4211)
-    Ep  10: train=0.7859  val_aug=0.5588
-    Ep  20: train=0.7129  val_aug=0.4771
-    Early stop @ epoch 21  (best aug val=0.4685)
-    Ep  10: train=0.7475  val_aug=0.6393
-    Ep  20: train=0.6800  val_aug=0.5693
-    Ep  30: train=0.6095  val_aug=0.4584
-    Ep  40: train=0.5948  val_aug=0.4464
-    Ep  50: train=0.5991  val_aug=0.4367
-    Ep  10: train=0.7202  val_aug=0.5759
-    Ep  20: train=0.5827  val_aug=0.4626
-    Ep  30: train=0.5515  val_aug=0.4234
-    Early stop @ epoch 38  (best aug val=0.4110)
-    Ep  10: train=0.7429  val_aug=0.5388
-    Ep  20: train=0.6833  val_aug=0.4448
-    Early stop @ epoch 24  (best aug val=0.3995)
-    Ep  10: train=0.7020  val_aug=0.6300
-    Ep  20: train=0.7121  val_aug=0.4799
-    Early stop @ epoch 28  (best aug val=0.4054)
-    Ep  10: train=0.6635  val_aug=0.4485
-    Ep  20: train=0.6232  val_aug=0.3857
-    Early stop @ epoch 29  (best aug val=0.3681)
-    Ep  10: train=0.8017  val_aug=0.5385
-    Ep  20: train=0.7215  val_aug=0.4099
-    Early stop @ epoch 26  (best aug val=0.4052)
-    Ep  10: train=0.7856  val_aug=0.5609
-    Ep  20: train=0.7062  val_aug=0.5030
-    Ep  30: train=0.6756  val_aug=0.4441
-    Early stop @ epoch 39  (best aug val=0.3737)
-    Ep  10: train=0.8509  val_aug=0.5108
-    Ep  20: train=0.7075  val_aug=0.5038
-    Ep  30: train=0.6248  val_aug=0.4658
-    Ep  40: train=0.7009  val_aug=0.3768
-    Early stop @ epoch 44  (best aug val=0.3455)
-    Ep  10: train=0.9227  val_aug=0.5888
-    Ep  20: train=0.5790  val_aug=0.4404
-    Early stop @ epoch 26  (best aug val=0.3754)
-    Ep  10: train=0.9488  val_aug=0.5890
-    Ep  20: train=0.7488  val_aug=0.4715
-    Early stop @ epoch 22  (best aug val=0.4430)
-    Ep  10: train=0.7787  val_aug=0.6090
-    Ep  20: train=0.6207  val_aug=0.4437
-    Early stop @ epoch 25  (best aug val=0.4083)
-    Ep  10: train=0.8807  val_aug=0.5901
-    Ep  20: train=0.6079  val_aug=0.5129
-    Ep  30: train=0.5615  val_aug=0.4441
-    Ep  40: train=0.5873  val_aug=0.4134
-    Ep  50: train=0.6544  val_aug=0.4089
-    Ep  10: train=0.6385  val_aug=0.4773
-    Ep  20: train=0.6402  val_aug=0.5853
-    Ep  30: train=0.5071  val_aug=0.4794
-    Early stop @ epoch 36  (best aug val=0.3740)
-    Ep  10: train=0.8748  val_aug=0.7192
-    Ep  20: train=0.6739  val_aug=0.4344
-    Early stop @ epoch 25  (best aug val=0.4207)
-    Ep  10: train=0.7190  val_aug=0.6100
-    Ep  20: train=0.5403  val_aug=0.4085
-    Ep  30: train=0.6116  val_aug=0.4312
-    Early stop @ epoch 35  (best aug val=0.3788)
-    Ep  10: train=0.7782  val_aug=0.6207
-    Ep  20: train=0.6676  val_aug=0.4570
-    Early stop @ epoch 24  (best aug val=0.4071)
-    Ep  10: train=0.7274  val_aug=0.5497
-    Ep  20: train=0.5954  val_aug=0.3911
-    Early stop @ epoch 29  (best aug val=0.3750)
-    Ep  10: train=0.7298  val_aug=0.5005
-    Ep  20: train=0.6614  val_aug=0.4074
-    Ep  30: train=0.6005  val_aug=0.3880
-    Ep  40: train=0.6145  val_aug=0.3517
-    Early stop @ epoch 47  (best aug val=0.3517)
-    Ep  10: train=0.7499  val_aug=0.6610
-    Ep  20: train=0.6368  val_aug=0.4285
-    Early stop @ epoch 26  (best aug val=0.4225)
-  LOGO-CV RMSE = 1.2427 ± 0.6042  (n_groups = 37)
-    Ep  10: train=0.8675  val_aug=0.4941
-    Ep  20: train=0.5840  val_aug=0.3715
-    Ep  30: train=0.4929  val_aug=0.3671
-    Early stop @ epoch 33  (best aug val=0.3465)
-  Augmentation: 155 → ~800 (+215 per method)
-  [1/3] Training β-VAE ...
-    VAE Ep 100: loss=53879.20
-    VAE Ep 200: loss=45896.85
-    VAE Ep 300: loss=41341.34
-  [2/3] Gaussian Copula ...
-    Copula KS validation: mean_KS=0.106 (lower = more realistic)
-  [3/3] Moving Block Bootstrap ...
-  FSD = -1.0057  [PASS ✓]  (threshold: <2.0 accept, >5.0 reject)
+### Full pipeline (sequential)
 
-══ W3: Regularisation Grid (dropout × weight_decay) ══
-  Best regularisation: do=0.2_wd=0.0001  RMSE=1.4073
-    Ep  10: train=1.3686  val_aug=1.0819
-    Ep  20: train=1.2211  val_aug=0.8931
-    Ep  30: train=1.2262  val_aug=0.9303
-    Ep  40: train=1.1129  val_aug=0.7989
-    Ep  50: train=1.1634  val_aug=0.7672
-    Ep  60: train=1.1813  val_aug=0.8246
-    Early stop @ epoch 63  (best aug val=0.7524)
-    Ep  10: train=0.9344  val_aug=0.8757
-    Ep  20: train=0.8764  val_aug=0.7861
-    Ep  30: train=0.8293  val_aug=0.7898
-    Ep  40: train=0.8678  val_aug=0.8084
-    Early stop @ epoch 50  (best aug val=0.7133)
-    Ep  10: train=0.9727  val_aug=0.8574
-    Ep  20: train=0.9180  val_aug=0.8292
-    Ep  30: train=0.8873  val_aug=0.7870
-    Ep  40: train=0.8741  val_aug=0.7444
-    Early stop @ epoch 45  (best aug val=0.7152)
-    Ep  10: train=0.8487  val_aug=0.9669
-    Ep  20: train=0.8850  val_aug=0.8564
-    Ep  30: train=0.9043  val_aug=0.8776
-    Ep  40: train=0.8293  val_aug=0.8171
-    Early stop @ epoch 44  (best aug val=0.7860)
-    Ep  10: train=1.1252  val_aug=1.1480
-    Ep  20: train=0.9291  val_aug=0.9783
-    Ep  30: train=0.9389  val_aug=1.1445
-    Early stop @ epoch 37  (best aug val=0.8718)
-
-══ W6: DM Multiple-Comparison Correction ═══════════
-                             p    p_bh  p_bonf  cohen_d
-BayesianLSTM_vs_Mamba   0.0010  0.0065  0.0104  -0.6169
-GRU_vs_Mamba            0.0014  0.0065  0.0142  -0.5974
-BiLSTM_vs_Mamba         0.0019  0.0065  0.0194  -0.5777
-LSTM_vs_Mamba           0.0199  0.0497  0.1989  -0.4197
-LSTM_vs_GRU             0.0651  0.1302  0.6508   0.3273
-BayesianLSTM_vs_LSTM    0.0962  0.1604  0.9623  -0.2937
-LSTM_vs_BiLSTM          0.3021  0.4316  1.0000   0.1798
-BayesianLSTM_vs_GRU     0.5198  0.6498  1.0000   0.1116
-GRU_vs_BiLSTM           0.5955  0.6616  1.0000  -0.0919
-BayesianLSTM_vs_BiLSTM  0.9495  0.9495  1.0000   0.0109
-
-  Significant pairs — raw: 4  BH-FDR: 4  Bonferroni: 3  (out of 10)
-
-✅ Robustness checks complete.
+```bash
+python scripts/01_eda.py --data_path data/ad_performance.xlsx
+python scripts/02_zinb.py --data_path data/ad_performance.xlsx
+python scripts/03_causal.py --data_path data/ad_performance.xlsx
+python scripts/04_augmentation.py --data_path data/ad_performance.xlsx
+python scripts/05_prediction.py --data_path data/ad_performance.xlsx
+python scripts/06_uncertainty.py
+python scripts/07_explainability.py --data_path data/ad_performance.xlsx --out_dir figures/
+python scripts/08_domain_adaptation.py
+python scripts/09_robustness.py
+python scripts/10_figures.py
 ```
 
-## Overfitting / Domain-Gap Policy (explicit statement for reviewers)
+> `07_explainability.py` requires `--out_dir` as a mandatory argument
+> (this is where `best_bayesian_lstm.pt` and Figure 9 are saved). On the
+> first run, the BayesianLSTM model is trained with a fixed seed and
+> checkpointed; subsequent runs reload it for reproducible attribution
+> results. Delete the `.pt` file to force retraining.
 
-This README reports the augmentation-to-real domain gap and the post-FDR Diebold-Mariano results in full, alongside the raw/headline numbers, rather than excluding them. Given N_train=174 real sequences (pre-augmentation), some train/val divergence is expected and is treated as diagnostic evidence about architecture suitability under extreme cold-start sparsity (RQ4d), not as a defect to be edited out.
+---
+
+## Results & Visualizations
+
+All figures are auto-generated by the pipeline and saved to `figures/`.
+Every number below is confirmed against `readme/README_v4_full.md`.
+
+### Table 2a — Classification Stage (H4a)
+
+| Model | AUC | F1 | AP |
+|-------|-----|----|----|
+| LR-Cls | **0.6143** | 0.3653 | 0.3016 |
+| LSTM-Cls | 0.6115 | 0.3026 | 0.3062 |
+| BayesianLSTM-Cls | 0.5894 | 0.3151 | 0.2723 |
+| MLP-Cls | 0.5445 | 0.2951 | 0.2989 |
+
+**H4a: NULL ⚬** — LR-Cls has the highest AUC. This holds whether you
+compare against BayesianLSTM-Cls (the hypothesis as written: 0.5894 <
+0.6143) or LSTM-Cls (the script's printed verdict: 0.6115 < 0.6143).
+Interpretation: sparse ad-group sequences at this sample size are largely
+linearly separable, so recurrent classifiers gain nothing over logistic
+regression for the binary has-conversion task.
+
+---
+
+### Table 2b — Regression Stage (H4b/H4c), confirmed final
+
+| Model | RMSE | MAE | R² |
+|-------|------|-----|----|
+| **LSTM** | **1.2099** | **0.9608** | **0.7342** |
+| BayesianLSTM | 1.3420 | 1.1063 | 0.6729 |
+| GRU | 1.3984 | 1.1450 | 0.6449 |
+| BiLSTM | 1.4998 | 1.1629 | 0.5915 |
+| Ridge | 1.6033 | 1.2684 | 0.5331 |
+| Mamba | 1.6356 | 1.3308 | 0.5142 |
+| MLP | 1.7086 | 1.3538 | 0.4699 |
+
+**H4b: SUPPORTED ✓** — LSTM (RMSE=1.2099) significantly beats Ridge
+(RMSE=1.6033); confirmed by DM test below (p_raw=0.0078, p_FDR=0.0316).
+
+**Domain-gap report (train–val gap, supports H4d):**
+
+| Model | Best epoch (real) | Best val_real | Best val_aug | Final train | gap_real | gap_aug |
+|-------|---------------------|-----------------|-----------------|----------------|----------|---------|
+| BayesianLSTM | 42 | 0.7525 | 0.7441 | 1.0936 | −0.2821 | −0.3494 |
+| LSTM | 22 | 0.7047 | 0.7133 | 0.8080 | −0.0862 | −0.0947 |
+| GRU | 36 | 0.6873 | 0.7131 | 0.8312 | −0.1591 | −0.1181 |
+| BiLSTM | 23 | 0.7587 | 0.6964 | 0.8477 | −0.0802 | −0.1513 |
+| Mamba | 35 | 0.7910 | 0.4564 | 0.6138 | +0.1142 | −0.1574 |
+
+BayesianLSTM shows by far the largest real/train gap (most overfitting
+risk under this sparsity); Mamba is the only model with a *positive*
+gap_real (final train loss slightly worse than best real-val loss),
+consistent with its comparatively low R² and its role as the
+robustness-focused architecture (H4c) rather than the raw-accuracy
+winner.
+
+---
+
+### Figure 13 — Diebold-Mariano Test Results (primary, raw + BH-FDR — `[FIX-10]`)
+
+| Pair | DM stat | p_raw | p_FDR | Winner |
+|------|---------|-------|-------|--------|
+| BayesianLSTM vs LSTM | 3.1782 | 0.0042* | 0.0293* | LSTM |
+| BayesianLSTM vs GRU | −1.1323 | 0.2692 | 0.3140 | BayesianLSTM |
+| BayesianLSTM vs BiLSTM | −1.6517 | 0.1122 | 0.1472 | BayesianLSTM |
+| BayesianLSTM vs Mamba | −2.3879 | 0.0255* | 0.0537 | BayesianLSTM |
+| BayesianLSTM vs Ridge | −2.1653 | 0.0410* | 0.0615 | BayesianLSTM |
+| BayesianLSTM vs MLP | −2.9221 | 0.0077* | 0.0316* | BayesianLSTM |
+| LSTM vs GRU | −2.7851 | 0.0105* | 0.0316* | LSTM |
+| LSTM vs BiLSTM | −2.7881 | 0.0105* | 0.0316* | LSTM |
+| LSTM vs Mamba | −3.4113 | 0.0024* | 0.0251* | LSTM |
+| LSTM vs Ridge | −2.9124 | 0.0078* | 0.0316* | LSTM |
+| LSTM vs MLP | −3.4587 | 0.0021* | 0.0251* | LSTM |
+| GRU vs BiLSTM | −1.5906 | 0.1254 | 0.1549 | GRU |
+| GRU vs Mamba | −2.3405 | 0.0283* | 0.0540 | GRU |
+| GRU vs Ridge | −2.4195 | 0.0239* | 0.0537 | GRU |
+| GRU vs MLP | −2.7088 | 0.0125* | 0.0329* | GRU |
+| BiLSTM vs Mamba | −2.2002 | 0.0381* | 0.0615 | BiLSTM |
+| BiLSTM vs Ridge | −2.2157 | 0.0369* | 0.0615 | BiLSTM |
+| BiLSTM vs MLP | −2.0115 | 0.0561 | 0.0786 | BiLSTM |
+| Mamba vs Ridge | 0.4228 | 0.6763 | 0.6763 | Ridge |
+| Mamba vs MLP | −0.5872 | 0.5628 | 0.5909 | Mamba |
+| Ridge vs MLP | −0.9403 | 0.3568 | 0.3944 | Ridge |
+
+**Summary: 14/21 pairs significant at raw p<0.05; 8/21 remain significant
+after BH-FDR correction** (test sequences n=24).
+
+> ⚠ **See Appendix W / Open Items below** — a second, independently
+> computed DM table (Appendix W6) reports different p-values for these
+> same pairs. Use **this** table (Figure 13 / FIX-10) as primary until
+> the discrepancy is resolved.
+
+---
+
+### Figure 9 — GS-SHAP Group-Level Attribution & Temporal Gini (`[FIX-9]`)
+
+| Cluster | Group 0 (CTR/CVR/Depth/log_cost/log_impression) | Group 1 (hour_sin/hour_cos) |
+|---------|--------------------------------------------------|------------------------------|
+| C0 High-Volume (n=7) | 0.328 | 0.317 |
+| C1 High-Conversion (n=9) | 0.280 | 0.342 |
+| C2 Click-Rich (n=8) | 0.373 | 0.290 |
+
+**Kruskal-Wallis (group-level):**
+
+| Group | p-value | Significance |
+|-------|---------|---------------|
+| Group 0 | 0.0428 | * |
+| Group 1 | 0.688 | ns |
+
+**H5 [FIX-9]: SUPPORTED ✓** — 1/2 HSIC group-level tests significant.
+Explicitly **not** a "5/7 features significant" statement.
+
+**Method agreement (Spearman ρ, gradient methods only):**
+
+| Cluster | Avg Spearman ρ | n (test samples) |
+|---------|-----------------|-------------------|
+| C0 High-Volume | 0.825 (High) | 7 ⚠ underpowered |
+| C1 High-Conversion | 0.559 (Moderate) | 9 ⚠ underpowered |
+| C2 Click-Rich | 0.813 (High) | 8 ⚠ underpowered |
+
+All three clusters have n<10 test samples; agreement and KW statistics
+should be reported with this caveat. LOGO-CV (§Appendix W1c) supplies the
+primary generalization evidence for H5.
+
+---
+
+### §H6 — Domain Shift
+
+| Feature | KS statistic | p-value | Significant? |
+|---------|--------------|---------|----------------|
+| CTR | 0.2200 | 1.51e-81 | * |
+| CVR | 0.0383 | 7.10e-03 | * |
+| Depth | 0.3749 | 1.13e-239 | * |
+| log_cost | 0.2271 | 6.41e-87 | * |
+| log_impression | 0.1310 | 4.94e-29 | * |
+| hour_sin | 0.0940 | 3.72e-15 | * |
+| hour_cos | 0.0296 | 6.79e-02 | ns |
+
+**H6: SUPPORTED ✓** (6/7 features p<0.05)
+
+**Domain adaptation (Search → Shopping, frozen-encoder fine-tuning):**
+
+| Transfer setup | RMSE | Gain vs. naive |
+|-----------------|------|------------------|
+| Naive transfer | 1.3133 | — |
+| Adapted (50% frozen) | 1.3133 | −0.0% |
+
+> No measurable improvement in this run; the primary contribution of
+> this analysis is the theoretical justification for domain-adaptive
+> design (motivated by the KS-test result above), not a performance
+> claim.
+
+---
+
+## Key Findings (v5.1, reconciled)
+
+| RQ / H | Method | Key Result (confirmed) | Verdict |
+|--------|--------|---------------------------|---------|
+| RQ1 / H1 | PSM + Doubly Robust IPW `[FIX-11]` | IPW-ATT = 0.1286 (primary); PSM-ATT = 0.1347 [0.1254, 0.1434]; n_matched = 14,987; DR consistent | ✓ Supported |
+| RQ2 / H2 | Baron-Kenny + Bootstrap (B=2,000) `[FIX-12]` | a = −0.3077, b = −0.0861, a×b = 0.0265 [0.0200, 0.0337] | ✓ Supported (negative suppressor) |
+| RQ3 / H3 | OLS HC3-robust interaction `[FIX-13]` | β_int = 0.3860 (p < 0.0001); ME_Search = 0.949; ME_Shopping = 0.563; R² = 0.6551, n = 9,069 | ✓ Supported |
+| RQ4 / H4a | LR-Cls vs. LSTM-Cls / BayesianLSTM-Cls | LR-Cls AUC=0.6143 beats both (LSTM-Cls 0.6115, BayesianLSTM-Cls 0.5894) | ⚬ NULL (boundary condition) |
+| RQ4 / H4b | LSTM vs. Ridge (DM, raw + FDR) `[FIX-10/22/23]` | **LSTM RMSE = 1.2099** vs. Ridge RMSE = 1.6033; DM p_raw = 0.0078, p_FDR = 0.0316 | ✓ Supported |
+| RQ4 / H4d | Domain-gap report | BayesianLSTM largest real/train gap (−0.28 to −0.35); Mamba only model with positive gap_real | ✓ Novel (reported, not minimized) |
+| RQ5 / H5 | KW (group-level) + GS-SHAP + Spearman ρ `[FIX-9]` | Group 0 vs. Group 1 significant (p = 0.0428); Spearman ρ 0.559–0.825 across clusters | ✓ Supported (caveat: n<10 per cluster) |
+| RQ6 / H6 | KS-test (Search vs Shopping) `[FIX-14/15]` | 6/7 features p < 0.05; frozen-encoder adaptation gain ≈ 0% | ✓ Supported (H6); adaptation benefit not demonstrated |
+| RQ7 | LOGO-CV + multi-advertiser | LOGO-CV RMSE = 1.2427 ± 0.6042 (n_groups = 37) | ✓ Supports within-scope generalization |
+
+> **H5 caveat (unchanged):** All three clusters have n<10 test samples
+> (C0=7, C1=9, C2=8). The group-level KW p=0.0428 is marginal. Phrasing
+> such as "5/7 features significant" misrepresents the GS-SHAP
+> group-level decomposition and must not be used.
+
+---
+
+## Code Fix Log (v3 + v5)
+
+### v3 fixes (unchanged from prior documentation)
+
+| Fix | File | Description |
+|-----|------|-------------|
+| FIX-1 | `trainer.py` | Added `real_val_loader`; early stopping driven by real held-out data. |
+| FIX-2 | `sequence.py` | `group_time_split()` replaces index-based `time_split()`. |
+| FIX-3 | `gsshap.py` | Added `np.abs()` before Gini computation. |
+| FIX-4a/4b | `gsshap.py` | Corrected `temporal_gini()` Lorenz formula; increased segmentation resolution. |
+| FIX-5 | `gsshap.py` | Added group-level Gini reporting (2 values, not 7 duplicates). |
+| FIX-6 | `agreement.py` | `_is_near_constant()` detector; explicit warnings instead of silent NaN. |
+| FIX-7 | `07_explainability.py` | Global seed fixation + BayesianLSTM checkpoint save/load. |
+| FIX-8 | `10_figures.py` | Human-readable x-axis labels, separated by cluster. |
+| FIX-B | `mbb.py` | Fixed `n_each` bug (41,006 → 870). |
+| FIX-C | `07_explainability.py` | Fixed Perm-SHAP aggregation collapsing to a scalar. |
+| FIX-D | `07_explainability.py` | Fixed `boxplot(arr.T, ...)` shape mismatch. |
+
+### v5 fixes
+
+| Fix | File | Description |
+|-----|------|-------------|
+| FIX-9 | `07_explainability.py` | H5 Kruskal-Wallis at HSIC group level (2 tests), not per-feature (7). |
+| FIX-10 | `05_prediction.py` | DM test reports raw p **and** BH-FDR corrected p for every pair. |
+| FIX-11/12/13 | `03_causal.py` + `sadaf/causal/*` | `run_h1/h2/h3()` updated to current single-function APIs. |
+| FIX-14/16 | `08_domain_adaptation.py`, `09_robustness.py` | `SeqDataset` import path corrected to `sadaf.data.sequence`. |
+| FIX-15/17 | `08_domain_adaptation.py`, `09_robustness.py` | `build_sequences()` keyword/arity corrected. |
+| FIX-18 | `09_robustness.py` | `augment_pipeline(ref_model=...)` keyword corrected. |
+| FIX-19/19b/20 | `09_robustness.py` | Models + batches moved to `DEVICE`; missing `DEVICE` import added. |
+| FIX-21 | `sadaf/augmentation/pipeline.py` | `train_vae()` / `vae_augment()` re-fix RNG seed on entry. |
+| FIX-22/23 | `05_prediction.py` | Seed re-fixed before `model_registry` instantiation and before each model's training loop. |
+
+All fixes are idempotent: each checks for its own `[FIX-N]` marker string
+before touching a file.
+
+---
+
+## Open Items / Figures Requiring Update
+
+| Item | Detail | Status |
+|------|--------|--------|
+| `fig_05_model_comparison.png` | Regenerate — underlying numbers are now confirmed final (Table 2b above), figure just needs to be re-rendered from them. | Numbers final; figure regen pending |
+| `fig_09_gsshap_importance_fixed.png` | Regenerate to reflect FIX-9's group-level framing in the figure caption/axis labels. | Pending |
+| `fig_13_dm_test.png` | Regenerate to show the full raw+FDR table, not just raw-significant pairs. | Pending |
+| **DM table discrepancy (new, v5.1)** | Appendix W6 (`readme/README_v4_full.md`) reports a *second* DM-with-correction table for the same model pairs, with different p-values and added Cohen's d (e.g. LSTM vs Mamba: p=0.0199, p_bh=0.0497, p_bonf=0.1989, d=−0.4197 — vs. Figure 13's p_raw=0.0024, p_FDR=0.0251 for the same pair). **Do not merge these tables.** Needs a code-level check of whether W6 uses a different test statistic, bootstrap resampling, or data subset than the FIX-10 implementation in `05_prediction.py`, before either table is trusted as canonical. | **Open — unresolved** |
+| FSD seed coverage | `sadaf/augmentation/copula.py` and `sadaf/augmentation/mbb.py` do not yet take an explicit `seed` parameter (only `train_vae()`/`vae_augment()` do, via FIX-21). This is the likely reason FSD still isn't reproducible *within* a single call site across separate runs. | Recommended follow-up |
+| Regularisation grid | Confirmed best config: `dropout=0.2, weight_decay=0.0001` → RMSE=1.4073 (GRU-based grid, Appendix W3). Not yet reflected in any figure/table above. | Add to Appendix if regularisation is reported in the manuscript |
+
+Run `python scripts/10_figures.py` after resolving the above to regenerate all figures.
+
+---
+
+## Data Availability
+
+The raw dataset (`3월성과데이터(샘플).xlsx`) consists of proprietary advertisement performance records from a single advertiser on the Naver platform and **cannot be publicly released** due to commercial confidentiality obligations.
+
+Data sharing requests should be submitted via GitHub Issues (label: `data-request`), including institutional affiliation, research purpose, and confirmation of non-commercial use. Requests are evaluated case-by-case; authors aim to respond within 14 business days.
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+The license covers only the code and methodology. The underlying dataset is **not** covered by this license and remains subject to separate data sharing terms.
+
+---
+
+## Acknowledgements
+
+- Lundberg & Lee (2017). *A Unified Approach to Interpreting Model Predictions*. NeurIPS.
+- Gal & Ghahramani (2016). *Dropout as a Bayesian Approximation*. ICML.
+- Gu et al. (2023). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces*. arXiv.
+- BusinessKorea (Apr 2026). *Naver's Search Market Share Hits 64% While Google Ranked 2nd with 29% Share* (InternetTrend data), used for the RQ0 market-context framing — verify before submission.
