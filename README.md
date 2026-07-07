@@ -1,6 +1,7 @@
 # SADAF: A Unified Causal–Predictive–Explainable Framework for Cold-Start Advertisement Performance Forecasting
 
 **A boundary-condition case study on a single-platform-concentrated search advertising market (Naver, South Korea, March 2025)**
+
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange.svg)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -15,7 +16,7 @@ Computational advertising research on cold-start performance forecasting — pre
 
 ## 📌 Version note (v5.1 → working-paper edition)
 
-This edition reorganizes the v5.1 engineering README into a self-contained working-paper narrative and corrects two numerical inconsistencies found by re-checking every reported figure against the captured pipeline log (`readme/README_v4_full.md`, the raw stdout of `01_eda.py → 09_robustness.py`, treated throughout as the source of truth):
+This edition reorganizes the v5.1 engineering README into a self-contained working-paper narrative, adds publication-quality architecture diagrams (§3, §4), and corrects two numerical inconsistencies found by re-checking every reported figure against the captured pipeline log (`readme/README_v4_full.md`, the raw stdout of `01_eda.py → 09_robustness.py`, treated throughout as the source of truth):
 
 | # | Issue | Resolution |
 |---|-------|------------|
@@ -99,6 +100,14 @@ A recurring theme across all three pillars is that **data scarcity is treated as
 
 ## 3. Framework Architecture
 
+SADAF routes a single sparse dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and group-level explainability — which converge on one integrated verdict, reported alongside its own robustness and scope boundaries.
+
+<p align="center"><img src="assets/framework_architecture_v2.png" width="820" alt="SADAF framework architecture: raw data, structural diagnosis, three methodological pillars, integrated verdict"></p>
+<p align="center"><em>Figure 1. SADAF framework architecture. A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and group-level explainability (H5) — which converge on an integrated, FDR-corrected verdict together with explicit robustness and scope checks (H6, RQ7).</em></p>
+
+<details>
+<summary>Text/Mermaid version of Figure 1 (for accessibility and diff-friendly editing)</summary>
+
 ```mermaid
 flowchart TD
     A["Raw hourly ad-group data\n89,675 rows × 32 columns\nNaver Search + Shopping, March 2025"] --> B["Structural diagnosis\nZINB vs ZIP\nΔAIC = −2798.9 → ZINB preferred"]
@@ -115,6 +124,8 @@ flowchart TD
     F --> G["H6 — Search vs Shopping domain shift\n6 of 7 features significant, KS test"]
     G --> H["RQ7 — LOGO-CV (37 folds)\nRMSE = 1.243 ± 0.604"]
 ```
+
+</details>
 
 ---
 
@@ -134,6 +145,11 @@ flowchart TD
 | Conversion rate | 11.77% |
 | Zero-ROAS rate (paid) | 72.1% |
 
+The full path from this raw export to the model-ready tensors used in §5 — preprocessing, the three-stage filtering funnel, group-aware sequence construction, the leakage-safe train/validation/test split, and train-only augmentation with its quality gate — is summarized in Figure 2 and detailed section-by-section below.
+
+<p align="center"><img src="assets/data_construction_architecture_v2.png" width="760" alt="Analysis-dataset construction pipeline: raw export, filtering funnel, sequence construction, group-aware split, train-only augmentation, model-ready tensors"></p>
+<p align="center"><em>Figure 2. Analysis-dataset construction pipeline. Rows are filtered in three stages (total → paid → ROAS>0), assembled into group-aware sequences, and split at the ad-group level before any augmentation is applied — augmentation runs on the training split only and is checked against a Fréchet Sequence Distance (FSD) quality gate prior to model training.</em></p>
+
 ### 4.2 Structural zero-inflation
 
 ROAS variance/mean overdispersion is 127,761 — several orders of magnitude beyond what a Poisson or standard negative-binomial model tolerates. A Zero-Inflated Negative Binomial (ZINB) model is preferred over its ZIP counterpart by a wide margin (ΔAIC = −2,798.9; AIC = 71,958.2, BIC = 72,025.3, converged via L-BFGS with valid standard errors). In the ZINB count component, `log_CTR` (β = 0.473, p<0.001) and `log_impression` (β = 0.218, p<0.001) increase expected ROAS while `log_cost` (β = −0.216, p<0.001) decreases it; in the inflation (structural-zero) component, both `log_CTR` (β = −0.190) and `log_cost` (β = −0.581) reduce the probability of a structural zero. This motivates a two-stage prediction design in §5.4: first classify whether an ad-group sequence will convert at all, then regress log-ROAS conditional on non-zero outcomes.
@@ -141,6 +157,7 @@ ROAS variance/mean overdispersion is 127,761 — several orders of magnitude bey
 ### 4.3 Campaign mix and market-concentration indicators (this advertiser, descriptive only)
 
 <p align="center"><img src="assets/fig6_market_context.png" width="720" alt="Campaign-type mix and hourly spend concentration"></p>
+<p align="center"><em>Figure 3. Campaign-type mix (Shopping vs. Search vs. zero-cost) and hourly concentration of paid spend for this advertiser, March 2025.</em></p>
 
 | Metric | Value |
 |---|---|
@@ -161,7 +178,7 @@ ROAS variance/mean overdispersion is 127,761 — several orders of magnitude bey
 | Test | 24 |
 | **Total** | **222** |
 
-A SEQ_LEN = 6 variant, used only for the H4c robustness check, yields 125 sequences. Splits are constructed at the ad-group level (not by row) to prevent leakage across time steps of the same ad group.
+A SEQ_LEN = 6 variant, used only for the H4c robustness check, yields 125 sequences. Splits are constructed at the ad-group level (not by row) to prevent leakage across time steps of the same ad group, as shown in Figure 2 above.
 
 ---
 
@@ -220,6 +237,7 @@ An HC3-robust OLS interaction model (`log_ROAS ~ log_CTR × is_search + log_cost
 **Stage 2 — regression (H4b/H4c).** Conditional on non-zero ROAS, seven architectures are compared on log-ROAS RMSE using a group-level train/val/test split (174/24/24).
 
 <p align="center"><img src="assets/fig1_regression_comparison.png" width="680" alt="Regression-stage model comparison"></p>
+<p align="center"><em>Figure 4. Log-ROAS regression performance (RMSE, MAE, R²) across seven architectures on the held-out test split.</em></p>
 
 | Model | RMSE | MAE | R² |
 |---|---|---|---|
@@ -234,6 +252,7 @@ An HC3-robust OLS interaction model (`log_ROAS ~ log_CTR × is_search + log_cost
 Statistical significance is assessed with pairwise Diebold–Mariano tests, reported both raw and after Benjamini–Hochberg FDR correction (21 comparisons):
 
 <p align="center"><img src="assets/fig3_dm_heatmap.png" width="880" alt="Diebold-Mariano pairwise heatmap"></p>
+<p align="center"><em>Figure 5. Pairwise Diebold–Mariano test statistics across all seven architectures, with raw and FDR-corrected significance annotated.</em></p>
 
 Of 21 pairs, 14 are significant at raw p<0.05; **8 remain significant after FDR correction**. LSTM beats every other model at FDR-corrected significance (vs. GRU, BiLSTM, Mamba, Ridge, MLP, and BayesianLSTM), which is the basis for the H4b verdict below.
 
@@ -244,6 +263,7 @@ Of 21 pairs, 14 are significant at raw p<0.05; **8 remain significant after FDR 
 **H4d — domain gap as diagnostic evidence, not noise:**
 
 <p align="center"><img src="assets/fig2_domain_gap.png" width="680" alt="Domain gap by architecture"></p>
+<p align="center"><em>Figure 6. Real-validation vs. augmented-validation loss gap by architecture, used as an overfitting-risk diagnostic under N=174 real training sequences.</em></p>
 
 | Model | Best epoch (real) | Best val (real) | Best val (aug) | Final train | gap_real | gap_aug |
 |---|---|---|---|---|---|---|
@@ -260,6 +280,7 @@ BayesianLSTM shows by far the largest real/train gap — the most overfitting ri
 GS-SHAP decomposes attribution at the level of **HSIC-defined feature groups**, not individual features. An eigengap criterion on the training data selects K=2 groups from the 7 available features: **Group 0** = {CTR, CVR, Depth, log_cost, log_impression}; **Group 1** = {hour_sin, hour_cos}. All features within a group receive identical attribution values by construction — reporting per-feature values as if they were 7 independent findings would misrepresent the method.
 
 <p align="center"><img src="assets/fig4_gsshap_gini.png" width="620" alt="GS-SHAP group-level temporal Gini by cluster"></p>
+<p align="center"><em>Figure 7. Group-level temporal Gini coefficients (GS-SHAP) for the two HSIC-defined feature groups, by ad-group cluster.</em></p>
 
 | Cluster (n test sequences) | Group 0 Gini | Group 1 Gini |
 |---|---|---|
@@ -291,6 +312,7 @@ All three clusters fall below the conventional n=10 threshold for these tests. T
 ### 5.6 H6 — Cross-campaign domain shift and adaptation
 
 <p align="center"><img src="assets/fig5_ks_domain_shift.png" width="680" alt="KS-test domain shift by feature"></p>
+<p align="center"><em>Figure 8. Kolmogorov–Smirnov test statistics for feature-distribution shift between Search and Shopping campaigns.</em></p>
 
 | Feature | KS statistic | p-value | Significant? |
 |---|---|---|---|
@@ -316,6 +338,7 @@ The improvement from adaptation is small. The value of this analysis is the empi
 ### 5.7 RQ7 — External-validity checks
 
 <p align="center"><img src="assets/fig7_logo_cv.png" width="640" alt="Leave-one-ad-group-out cross-validation"></p>
+<p align="center"><em>Figure 9. Leave-one-ad-group-out cross-validation (37 folds) RMSE distribution, compared against the single-split test RMSE.</em></p>
 
 Leave-one-ad-group-out cross-validation (37 folds) gives **RMSE = 1.2427 ± 0.6042**, consistent with (slightly higher than, and with substantially more spread than) the single group-split test RMSE of 1.2099 reported in §5.4 — as expected, since LOGO-CV is a harder, fold-averaged generalization test rather than a single lucky split. A regularization grid search (dropout × weight decay, GRU-based) finds a best configuration of dropout = 0.2, weight_decay = 1×10⁻⁴, RMSE = 1.4073, which is not directly comparable to the headline LSTM number above (different architecture, different sweep) but is retained here as a robustness reference point.
 
@@ -354,6 +377,15 @@ None of this establishes that Korean, Naver-concentrated, or single-platform mar
 ```
 sadaf/
 ├── assets/                              # Figures embedded in this README
+│   ├── framework_architecture_v2.png     # Figure 1 — framework architecture
+│   ├── data_construction_architecture_v2.png  # Figure 2 — dataset construction pipeline
+│   ├── fig1_regression_comparison.png
+│   ├── fig2_domain_gap.png
+│   ├── fig3_dm_heatmap.png
+│   ├── fig4_gsshap_gini.png
+│   ├── fig5_ks_domain_shift.png
+│   ├── fig6_market_context.png
+│   └── fig7_logo_cv.png
 ├── data/
 │   └── README_data.md
 ├── docs/
