@@ -32,6 +32,12 @@ Two files should be read together and never treated as duplicates:
 
 ---
 
+## Data provenance
+
+The raw dataset underlying this repository consists of internal advertising-operations performance records maintained by **SearchM Co., Ltd.**, an official Naver and Kakao advertising agency, covering a single advertiser's Search and Shopping campaigns on Naver during March 2025. All references to "the advertiser" or "the dataset" throughout this README point to this SearchM-operated account; see §11 for data-availability and request procedures.
+
+---
+
 ## Table of Contents
 
 1. [Motivation and Scope](#1-motivation-and-scope)
@@ -60,7 +66,7 @@ Two files should be read together and never treated as duplicates:
 
 Cold-start advertisement forecasting — predicting the performance of ads that have run for only a few hours or days — is a well-studied problem, but the literature's empirical grounding is narrow in one specific way: it is built almost entirely on markets where a single search platform (Google) commands more than 90% of query volume. Whether the causal structures, predictive architectures, and explainability patterns discovered in that setting generalize to a *differently concentrated* market is rarely tested, because the data to test it is rarely available.
 
-South Korea in March 2025 offers a natural experiment. According to InternetTrend data reported by BusinessKorea (April 2026), Naver held an average **63.8%** share of Korean search volume that month against Google's **28.7%** (65.1% in February 2025) — a platform-concentration structure with no equivalent among the >90%-Google markets that most computational-advertising work assumes.¹ This repository's dataset — 89,675 hourly ad-group performance records from a single Naver Shopping/Search advertiser across March 2025 — is used as a **boundary-condition case study**, not as a claim of representativeness for the Korean market as a whole. The dataset's own concentration is itself notable: a Shopping-heavy campaign mix (78.8% of rows) and an ad-group spend HHI of 201.0 on a 0–10,000 scale describe *this* advertiser, not the market, and are reported as scope indicators rather than generalizable facts.
+South Korea in March 2025 offers a natural experiment. According to InternetTrend data reported by BusinessKorea (April 2026), Naver held an average **63.8%** share of Korean search volume that month against Google's **28.7%** (65.1% in February 2025) — a platform-concentration structure with no equivalent among the >90%-Google markets that most computational-advertising work assumes.¹ This repository's dataset — 89,675 hourly ad-group performance records from a single Naver Shopping/Search advertiser across March 2025, drawn from SearchM Co., Ltd.'s internal agency-operations data (see [Data provenance](#data-provenance)) — is used as a **boundary-condition case study**, not as a claim of representativeness for the Korean market as a whole. The dataset's own concentration is itself notable: a Shopping-heavy campaign mix (78.8% of rows) and an ad-group spend HHI of 201.0 on a 0–10,000 scale describe *this* advertiser, not the market, and are reported as scope indicators rather than generalizable facts.
 
 > ¹ Source (verify before any external citation): BusinessKorea, *"Naver's Search Market Share Hits 64% While Google Ranked 2nd with 29% Share"* (Apr. 16, 2026), citing InternetTrend monthly tracking data.
 
@@ -104,7 +110,7 @@ A recurring theme across all three pillars is that **data scarcity is treated as
 
 SADAF routes a single sparse dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and group-level explainability — which converge on one integrated verdict, reported alongside its own robustness and scope boundaries.
 
-<p align="center"><img src="assets/framework_architecture_v2.png" width="820" alt="SADAF framework architecture: raw data, structural diagnosis, three methodological pillars, integrated verdict"></p>
+<p align="center"><img src="assets/sadaf_framework_architecture_bw_searchm.png" width="820" alt="SADAF framework architecture: raw data, structural diagnosis, three methodological pillars, integrated verdict"></p>
 <p align="center"><em>Figure 1. SADAF framework architecture. A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and group-level explainability (H5) — which converge on an integrated, FDR-corrected verdict together with explicit robustness and scope checks (H6, RQ7).</em></p>
 
 <details>
@@ -141,7 +147,7 @@ flowchart TD
 | Columns (raw + derived) | 32 |
 | Time period | March 2025 (1 calendar month) |
 | Granularity | Ad-group × hour |
-| Advertiser | Single (anonymized), Naver Search/Shopping |
+| Advertiser | Single (anonymized), Naver Search/Shopping; agency-operated by SearchM Co., Ltd. |
 | Paid rows | 32,494 |
 | Rows with ROAS > 0 | 9,071 (27.9% of paid) |
 | Conversion rate | 11.77% |
@@ -404,7 +410,7 @@ None of this establishes that Korean, Naver-concentrated, or single-platform mar
 ```
 sadaf/
 ├── assets/                              # Figures embedded in this README
-│   ├── framework_architecture_v2.png     # Figure 1 — framework architecture
+│   ├── sadaf_framework_architecture_bw_searchm.png  # Figure 1 — framework architecture
 │   ├── data_construction_architecture_v2.png  # Figure 2 — dataset construction pipeline
 │   ├── fig1_regression_comparison.png
 │   ├── fig6_domain_gap_corrected.png     # Figure 6 (corrected, v5.2) — epoch-consistent domain gap
@@ -540,7 +546,7 @@ All fixes are idempotent: each checks for its own `[FIX-N]` marker string before
 
 ## 11. Data Availability
 
-The raw dataset consists of proprietary advertisement performance records from a single advertiser on the Naver platform and **cannot be publicly released** due to commercial confidentiality obligations. Data-sharing requests should be submitted via GitHub Issues (label: `data-request`) including institutional affiliation, research purpose, and confirmation of non-commercial use; requests are evaluated case-by-case.
+The raw dataset consists of internal advertising-operations performance records maintained by SearchM Co., Ltd., an official Naver and Kakao advertising agency, covering a single advertiser's account on the Naver platform, and **cannot be publicly released** due to commercial confidentiality obligations. Data-sharing requests should be submitted via GitHub Issues (label: `data-request`) including institutional affiliation, research purpose, and confirmation of non-commercial use; requests are evaluated case-by-case.
 
 The 37-row `figures/logo_cv_fold_rmse.csv` (Figure 9 source data) contains only anonymized ad-group identifiers and aggregate per-fold RMSE/fold-size values — no raw performance rows — and may be shared more permissively than the underlying Excel export; confirm with the data owner before external release.
 
