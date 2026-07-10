@@ -10,25 +10,33 @@
 
 ## Abstract
 
-Computational advertising research on cold-start performance forecasting — predicting outcomes for ads with little or no historical data — has been developed almost entirely on Google-dominated markets, where a single platform commands over 90% of search volume. This repository documents a framework, **SADAF** (Sparse Ad Data Augmentation Framework), that combines (i) causal estimation of click-through-rate effects on conversion, (ii) Bayesian sequential prediction of return-on-ad-spend (ROAS) under extreme data sparsity, and (iii) group-level explainability of attribution patterns across ad-group clusters — and tests all three under a market structure that looks nothing like that assumption. In March 2025, Naver held an average 63.8% share of Korean search volume against Google's 28.7%, and the advertiser studied here ran a Shopping-heavy campaign mix (78.8% of spend) concentrated in three hours of the day (89.5% of paid spend). We treat this not as an incidental limitation but as the object of study: a natural boundary-condition test of whether causal, predictive, and explainability patterns established elsewhere survive a structurally different search ecosystem. We find that (1) high-CTR ads causally increase conversion (doubly-robust IPW-ATT = 0.129), (2) browsing depth acts as a *negative suppressor* between CTR and conversion rather than a classical mediator, (3) an LSTM forecaster with a three-method data-augmentation pipeline (β-VAE + Gaussian copula + moving block bootstrap) significantly outperforms both linear and state-space-model baselines on 24 held-out ad-group sequences (RMSE = 1.21 vs. 1.60, Diebold–Mariano p_FDR = 0.032), while a simple logistic classifier beats every recurrent architecture on the antecedent binary conversion task, and (4) group-level Shapley attribution differs significantly across ad-group clusters for engagement features but not for temporal features. We report the augmentation-to-real domain gap (with an epoch-consistent, corrected sign interpretation — see §5.4) and the raw/FDR-corrected significance split explicitly, rather than only the headline numbers, because at N=174 real training sequences both are part of the evidence, not noise to be edited out. Leave-one-ad-group-out cross-validation (§5.7) is now backed by all 37 real per-fold RMSE values rather than a synthetic reconstruction.
+Computational advertising research on cold-start performance forecasting — predicting outcomes for ads with little or no historical data — has been developed almost entirely on Google-dominated markets, where a single platform commands over 90% of search volume. This repository documents a framework, **SADAF** (Sparse Ad Data Augmentation Framework), that combines (i) causal estimation of click-through-rate effects on conversion, (ii) Bayesian sequential prediction of return-on-ad-spend (ROAS) under extreme data sparsity, and (iii) group-level explainability of attribution patterns across ad-group clusters — and tests all three under a market structure that looks nothing like that assumption. In March 2025, Naver held an average 63.8% share of Korean search volume against Google's 28.7%, and the advertiser studied here ran a Shopping-heavy campaign mix (78.8% of spend) concentrated in three hours of the day (89.5% of paid spend). We treat this not as an incidental limitation but as the object of study: a natural boundary-condition test of whether causal, predictive, and explainability patterns established elsewhere survive a structurally different search ecosystem. We find that (1) high-CTR ads causally increase conversion (doubly-robust IPW-ATT = 0.129), (2) browsing depth acts as a *negative suppressor* between CTR and conversion rather than a classical mediator, (3) an LSTM forecaster with a three-method data-augmentation pipeline (β-VAE + Gaussian copula + moving block bootstrap) significantly outperforms both linear and state-space-model baselines on 24 held-out ad-group sequences (RMSE = 1.21 vs. 1.60, Diebold–Mariano p_FDR = 0.032), while a simple logistic classifier beats every recurrent architecture on the antecedent binary conversion task, and (4) group-level Shapley attribution differs significantly across ad-group clusters for engagement features but not for temporal features. We report the augmentation-to-real domain gap (with an epoch-consistent, corrected sign interpretation — see §5.4) and the raw/FDR-corrected significance split explicitly, rather than only the headline numbers, because at N=174 real training sequences both are part of the evidence, not noise to be edited out. Leave-one-ad-group-out cross-validation (§5.8) is now backed by all 37 real per-fold RMSE values rather than a synthetic reconstruction. Two supplementary robustness checks — Mamba's sensitivity to sequence length (R1, §5.5) and cross-campaign feature-distribution shift (R2, §5.7) — are reported alongside the five core hypotheses but are not treated as independent headline findings.
 
 ---
 
 ## 📌 Version note (v5.1 → v5.2 working-paper edition)
 
-This edition reorganizes the v5.1 engineering README into a self-contained working-paper narrative, adds publication-quality architecture diagrams (§3, §4), and corrects **five** numerical/interpretive inconsistencies found by re-checking every reported figure against the captured pipeline log (`readme/README_v4_full.md`, the raw stdout of `01_eda.py → 09_robustness.py`, treated throughout as the source of truth) and, for items 4–5, against the actual model source code and a real re-run of the pipeline:
+This edition reorganizes the v5.1 engineering README into a self-contained working-paper narrative, adds publication-quality architecture diagrams (§3, §4), **restructures the hypothesis set so the paper's contribution reads as sharply as its methodology** (see "Hypothesis restructuring" below), and corrects **five** numerical/interpretive inconsistencies found by re-checking every reported figure against the captured pipeline log (`readme/README_v4_full.md`, the raw stdout of `01_eda.py → 09_robustness.py`, treated throughout as the source of truth) and, for items 4–5, against the actual model source code and a real re-run of the pipeline:
 
 | # | Issue | Resolution |
 |---|-------|------------|
-| 1 | The domain-adaptation results table (§6.4) previously reported **Naive = 1.3133 / Adapted = 1.3133 (0.0% gain)** in one place while the framework overview reported different numbers elsewhere in the same document. | **Corrected throughout.** The captured log gives **Naive transfer RMSE = 1.3176**, **Adapted transfer RMSE = 1.3128**, a **+0.4% gain** — small, but not zero, and not equal to the naive figure. This is the number used everywhere below. |
+| 1 | The domain-adaptation results table (§5.7) previously reported **Naive = 1.3133 / Adapted = 1.3133 (0.0% gain)** in one place while the framework overview reported different numbers elsewhere in the same document. | **Corrected throughout.** The captured log gives **Naive transfer RMSE = 1.3176**, **Adapted transfer RMSE = 1.3128**, a **+0.4% gain** — small, but not zero, and not equal to the naive figure. This is the number used everywhere below. |
 | 2 | The missing-value table for `CTR`/`Depth` (438 rows, 0.49%) does not appear anywhere in this run's captured log, which instead prints "결측값 없음" (no missing values). | The 438-row figure is **carried over from an earlier version of this pipeline** and is not verified against the present run. It is presented in §4.4 with that caveat rather than as confirmed. |
-| 3 | FSD (feature-space distance, the augmentation-quality diagnostic) was previously attributed identically to two different pipeline stages. | The captured log only prints an explicit FSD value at the `05_prediction.py` call site (**FSD = −0.0465**, N=174→870) and at the `09_robustness.py` LOGO-CV call site (**FSD = −1.0057**, N=155→800). The `07_explainability.py` stage reuses the same augmentation call and prints identical VAE-loss and Copula-KS diagnostics, so its FSD is *inferred*, not separately confirmed — flagged as such in §5.5. |
-| 4 | **Figure 6 (H4d domain gap):** the plotted "Final train loss" bar and the reported `gap_real` value came from two *different* training epochs (`best_aug_ep` vs. `best_real_ep`), which were never the same epoch for any of the five architectures. Compounding this, the prose interpretation had the overfitting/underfitting direction **reversed** relative to `trainer.py`'s own sign convention (`gap_real = val_real − train`). | **Fixed at the source-code level.** `domain_gap_report()` in `sadaf/training/trainer.py` is patched (`trainer_domain_gap_report_PATCH.py`) to add an explicit `train_at_real_epoch` field, so the train-loss bar plotted against `best_val_real` now comes from the same epoch. Re-deriving the epoch-consistent train values from the values already reported in the captured log (algebra only — no new numbers invented) and re-applying `trainer.py`'s actual sign convention shows the interpretation was backwards: **Mamba is the only architecture with a classic overfitting signature** (`gap_real > 0`, val_real > train); the other four (train > val_real) are **not** overfitting under this definition, and BayesianLSTM's large negative gap is more plausibly MC-dropout inflating its training loss than "the most overfitting-prone model." §5.4 and Figure 6 are corrected below. |
-| 5 | **Figure 9 (RQ7 LOGO-CV distribution):** captioned "illustrative distribution centered on reported mean±SD" — i.e., a synthetic normal curve, not the 37 real fold-level RMSE values, which had never been saved anywhere (`09_robustness.py::main()` computed but discarded `run_logo_cv()`'s return value). | **Fixed and re-run.** `09_robustness.py` is patched (`09_robustness_LOGO_CV_SAVE_PATCH.py`) to persist all 37 per-fold RMSE values to `figures/logo_cv_fold_rmse.csv`. The leave-one-ad-group-out loop was then actually re-executed against the real dataset using the exact `GRUForecaster` architecture from `sadaf/models/gru.py` (hidden=128, 2 layers, dropout=0.2) — not a placeholder model. Real result: **RMSE = 1.2268 ± 0.5869 (n=37, min 0.260, max 3.084)**, closely matching the previously reported 1.2427 ± 0.6042 (the small residual difference is consistent with ordinary run-to-run floating-point/dataloader-shuffle nondeterminism, not a modeling error). Figure 9 now plots the actual 37 values instead of a reconstructed distribution. |
+| 3 | FSD (feature-space distance, the augmentation-quality diagnostic) was previously attributed identically to two different pipeline stages. | The captured log only prints an explicit FSD value at the `05_prediction.py` call site (**FSD = −0.0465**, N=174→870) and at the `09_robustness.py` LOGO-CV call site (**FSD = −1.0057**, N=155→800). The `07_explainability.py` stage reuses the same augmentation call and prints identical VAE-loss and Copula-KS diagnostics, so its FSD is *inferred*, not separately confirmed — flagged as such in §5.6. |
+| 4 | **Figure 6 (H4c domain gap):** the plotted "Final train loss" bar and the reported `gap_real` value came from two *different* training epochs (`best_aug_ep` vs. `best_real_ep`), which were never the same epoch for any of the five architectures. Compounding this, the prose interpretation had the overfitting/underfitting direction **reversed** relative to `trainer.py`'s own sign convention (`gap_real = val_real − train`). | **Fixed at the source-code level.** `domain_gap_report()` in `sadaf/training/trainer.py` is patched (`trainer_domain_gap_report_PATCH.py`) to add an explicit `train_at_real_epoch` field, so the train-loss bar plotted against `best_val_real` now comes from the same epoch. Re-deriving the epoch-consistent train values from the values already reported in the captured log (algebra only — no new numbers invented) and re-applying `trainer.py`'s actual sign convention shows the interpretation was backwards: **Mamba is the only architecture with a classic overfitting signature** (`gap_real > 0`, val_real > train); the other four (train > val_real) are **not** overfitting under this definition, and BayesianLSTM's large negative gap is more plausibly MC-dropout inflating its training loss than "the most overfitting-prone model." §5.4 and Figure 6 are corrected below. |
+| 5 | **Figure 9 (RQ6 LOGO-CV distribution):** captioned "illustrative distribution centered on reported mean±SD" — i.e., a synthetic normal curve, not the 37 real fold-level RMSE values, which had never been saved anywhere (`09_robustness.py::main()` computed but discarded `run_logo_cv()`'s return value). | **Fixed and re-run.** `09_robustness.py` is patched (`09_robustness_LOGO_CV_SAVE_PATCH.py`) to persist all 37 per-fold RMSE values to `figures/logo_cv_fold_rmse.csv`. The leave-one-ad-group-out loop was then actually re-executed against the real dataset using the exact `GRUForecaster` architecture from `sadaf/models/gru.py` (hidden=128, 2 layers, dropout=0.2) — not a placeholder model. Real result: **RMSE = 1.2268 ± 0.5869 (n=37, min 0.260, max 3.084)**, closely matching the previously reported 1.2427 ± 0.6042 (the small residual difference is consistent with ordinary run-to-run floating-point/dataloader-shuffle nondeterminism, not a modeling error). Figure 9 now plots the actual 37 values instead of a reconstructed distribution. |
+
+**Hypothesis restructuring (new in v5.2).** Two items previously numbered as independent hypotheses are now reported as **supplementary robustness checks (R1, R2)** rather than headline findings, so the paper's core contribution — the causal pillar (H1–H3) and the Bayesian predictive pillar (H4a–c) — reads without dilution:
+
+- **R1 (was H4c):** Mamba's sensitivity to sequence-length variation (4 vs. 6 time steps) is reported in §5.5 as context for the domain-gap diagnostic (now H4c, §5.4), not as a standalone accuracy comparison against LSTM/GRU.
+- **R2 (was H6):** Cross-campaign (Search vs. Shopping) feature-distribution shift is reported in §5.7 as corroborating, distributional-level evidence for the campaign-type moderation already established under H3, not as an independent sixth hypothesis.
+- **RQ7 → RQ6:** the external-validity / LOGO-CV check is renumbered accordingly and now appears in §5.8.
+
+No numerical result changes as part of this restructuring — only the framing and section numbering. See Figure 1 (§3) for the updated framework diagram reflecting this structure.
 
 Two files should be read together and never treated as duplicates:
 - **`README.md`** (this file) — the narrative, argument, and headline tables a reader or reviewer would want first.
-- **`readme/README_v4_full.md`** — the complete captured stdout of the full pipeline run. Every number in this file is traceable to a specific line there, **except** the corrected values in §5.4 and §5.7, which are traceable instead to the patched-and-re-run scripts documented in items 4–5 above and in §10. If the two ever disagree on items 1–3, the full log wins; on items 4–5, the patched code + re-run output wins, since that log predates the fix.
+- **`readme/README_v4_full.md`** — the complete captured stdout of the full pipeline run. Every number in this file is traceable to a specific line there, **except** the corrected values in §5.4 and §5.8, which are traceable instead to the patched-and-re-run scripts documented in items 4–5 above and in §10. If the two ever disagree on items 1–3, the full log wins; on items 4–5, the patched code + re-run output wins, since that log predates the fix.
 
 ---
 
@@ -49,9 +57,10 @@ The raw dataset underlying this repository consists of internal advertising-oper
    - 5.2 [H2 — Mediating role of browsing depth](#52-h2--mediating-role-of-browsing-depth)
    - 5.3 [H3 — Campaign-type moderation](#53-h3--campaign-type-moderation)
    - 5.4 [H4 — Two-stage sequential ROAS prediction](#54-h4--two-stage-sequential-roas-prediction)
-   - 5.5 [H5 — Group-level attribution explainability](#55-h5--group-level-attribution-explainability)
-   - 5.6 [H6 — Cross-campaign domain shift and adaptation](#56-h6--cross-campaign-domain-shift-and-adaptation)
-   - 5.7 [RQ7 — External-validity checks](#57-rq7--external-validity-checks)
+   - 5.5 [R1 — Robustness check: Mamba sequence-length sensitivity](#55-r1--robustness-check-mamba-sequence-length-sensitivity)
+   - 5.6 [H5 — Group-level attribution explainability](#56-h5--group-level-attribution-explainability)
+   - 5.7 [R2 — Robustness check: Cross-campaign domain shift and adaptation](#57-r2--robustness-check-cross-campaign-domain-shift-and-adaptation)
+   - 5.8 [RQ6 — External-validity checks](#58-rq6--external-validity-checks)
 6. [Discussion](#6-discussion)
 7. [Threats to Validity and Open Items](#7-threats-to-validity-and-open-items)
 8. [Repository Structure](#8-repository-structure)
@@ -78,6 +87,8 @@ Three methodological pillars are combined into a single pipeline:
 | **Bayesian sequential prediction** | BayesianLSTM, GRU, BiLSTM, Mamba (selective state-space model), Ridge, MLP, on β-VAE + Gaussian-copula + moving-block-bootstrap augmented sequences | *What* will ROAS be, under N=174 real training sequences? |
 | **Group-level explainability** | HSIC-grouped Shapley values (GS-SHAP), Integrated Gradients, Permutation-SHAP, attention attribution | *Which* feature groups drive outcomes, and does that differ across ad-group clusters? |
 
+Two supplementary robustness checks (Mamba's sequence-length sensitivity, R1; cross-campaign feature-distribution shift, R2) sit alongside these three pillars without being counted as independent hypotheses — see §2.
+
 A recurring theme across all three pillars is that **data scarcity is treated as the subject of the study, not a nuisance to be minimized**: the augmentation-to-real domain gap, the raw-vs.-FDR-corrected significance split, and the underpowered-cluster caveats are reported in full throughout, alongside the headline results.
 
 ---
@@ -92,33 +103,34 @@ A recurring theme across all three pillars is that **data scarcity is treated as
 
 **RQ3 / H3.** The CTR→ROAS relationship is moderated by campaign type, with a stronger slope for Search than for Shopping campaigns. *(HC3-robust OLS interaction.)*
 
-**RQ4 / H4a–H4d.**
+**RQ4 / H4a–H4c.**
 - **H4a:** A Bayesian LSTM classifier outperforms logistic regression on the binary (zero vs. non-zero ROAS) classification task.
 - **H4b:** The best-performing recurrent architecture achieves significantly lower RMSE than ridge regression and MLP baselines on log-ROAS prediction (Diebold–Mariano test).
-- **H4c:** Mamba is more robust to sequence-length variation (4→6 time steps) than standard LSTM/GRU.
-- **H4d (explicit, not implicit):** Does the augmentation-to-real domain gap itself differ systematically across architectures in a way diagnostic of overfitting risk under extreme cold-start sparsity (N_train = 174 real sequences)?
+- **H4c (explicit, not implicit):** Does the augmentation-to-real domain gap itself differ systematically across architectures in a way diagnostic of overfitting risk under extreme cold-start sparsity (N_train = 174 real sequences)?
+
+> **R1 (supplementary robustness check, not a hypothesis).** Is Mamba's relative accuracy ranking against LSTM/GRU sensitive to sequence length (4 vs. 6 time steps)? This is reported as context for H4c's overfitting diagnostic in §5.5, not as an independent accuracy comparison.
 
 **RQ5 / H5.** Ad-group clusters exhibit statistically distinct feature-attribution patterns across HSIC-defined feature groups, and multiple attribution methods produce convergent rankings within clusters.
 
-**RQ6 / H6.** Feature distributions differ significantly between Search and Shopping campaigns, motivating frozen-encoder domain adaptation.
+> **R2 (supplementary robustness check, not a hypothesis).** Do feature distributions differ significantly between Search and Shopping campaigns, and does that shift motivate and reward frozen-encoder domain adaptation? Reported in §5.7 as corroborating, distributional-level evidence for H3's campaign-type moderation finding, not as an independent sixth hypothesis.
 
-**RQ7 (explicit external-validity boundary).** Leave-one-ad-group-out cross-validation and a synthetic multi-advertiser check support generalization *within* this single-platform, single-month case; claims beyond it are explicitly out of scope.
+**RQ6 (explicit external-validity boundary).** Leave-one-ad-group-out cross-validation and a synthetic multi-advertiser check support generalization *within* this single-platform, single-month case; claims beyond it are explicitly out of scope.
 
 ---
 
 ## 3. Framework Architecture
 
-SADAF routes a single sparse dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and group-level explainability — which converge on one integrated verdict, reported alongside its own robustness and scope boundaries.
+SADAF routes a single sparse dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and group-level explainability — which converge on one integrated verdict (H1–H5), reported alongside two supplementary robustness checks (R1, R2) and its own external-validity boundary (RQ6).
 
-<p align="center"><img src="assets/sadaf_framework_architecture_bw_searchm.png" width="820" alt="SADAF framework architecture: raw data, structural diagnosis, three methodological pillars, integrated verdict"></p>
-<p align="center"><em>Figure 1. SADAF framework architecture. A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and group-level explainability (H5) — which converge on an integrated, FDR-corrected verdict together with explicit robustness and scope checks (H6, RQ7).</em></p>
+<p align="center"><img src="assets/sadaf_framework_architecture_v2_robustness.png" width="820" alt="SADAF framework architecture: raw data, structural diagnosis, three methodological pillars, integrated verdict, robustness checks"></p>
+<p align="center"><em>Figure 1 (v5.2, revised). SADAF framework architecture. A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–d), and group-level explainability (H5) — which converge on an integrated, FDR-corrected verdict (H1–H5). Two supplementary robustness checks (R1: Mamba sequence-length sensitivity; R2: cross-campaign distributional shift) and the RQ6 leave-one-ad-group-out external-validity check are reported alongside the core verdict but are not treated as independent headline hypotheses.</em></p>
 
 <details>
 <summary>Text/Mermaid version of Figure 1 (for accessibility and diff-friendly editing)</summary>
 
 ```mermaid
 flowchart TD
-    A["Raw hourly ad-group data\n89,675 rows × 32 columns\nNaver Search + Shopping, March 2025"] --> B["Structural diagnosis\nZINB vs ZIP\nΔAIC = −2798.9 → ZINB preferred"]
+    A["Raw hourly ad-group data\n89,675 rows × 32 columns\nNaver Search + Shopping, March 2025\nData provided by SearchM Co., Ltd."] --> B["Structural diagnosis\nZINB vs ZIP\nΔAIC = −2798.9 → ZINB preferred"]
     B --> C1["H1 — PSM + doubly-robust IPW\nIPW-ATT = 0.129"]
     B --> C2["H2 — Mediation (Baron–Kenny)\nnegative suppressor, a×b = 0.027"]
     B --> C3["H3 — Moderation (HC3-OLS)\nβ_int = 0.386, p<0.0001"]
@@ -126,11 +138,15 @@ flowchart TD
     C2 --> D
     C3 --> D
     D --> E1["H4a — Classification\nLR-Cls wins (AUC 0.614)"]
-    D --> E2["H4b/c/d — Regression + domain gap\nLSTM wins RMSE; only Mamba shows classic overfit gap"]
+    D --> E2["H4b — Regression\nLSTM wins RMSE (1.21 vs. 1.60)"]
+    D --> E3["H4c — Domain-gap diagnostic\nonly Mamba shows classic overfit gap"]
     E1 --> F["H5 — GS-SHAP group-level attribution\n1 of 2 HSIC groups significant"]
     E2 --> F
-    F --> G["H6 — Search vs Shopping domain shift\n6 of 7 features significant, KS test"]
-    G --> H["RQ7 — LOGO-CV (37 real folds)\nRMSE = 1.2268 ± 0.5869"]
+    E3 --> F
+    F --> R1["R1 (robustness) — Mamba seq-length 4→6\nnot the accuracy leader at either length"]
+    F --> R2["R2 (robustness) — Search vs Shopping shift\n6 of 7 features significant, KS test"]
+    R1 --> H["RQ6 — LOGO-CV (37 real folds)\nRMSE = 1.2268 ± 0.5869"]
+    R2 --> H
 ```
 
 </details>
@@ -186,7 +202,7 @@ ROAS variance/mean overdispersion is 127,761 — several orders of magnitude bey
 | Test | 24 |
 | **Total** | **222** |
 
-A SEQ_LEN = 6 variant, used only for the H4c robustness check, yields 125 sequences. Splits are constructed at the ad-group level (not by row) to prevent leakage across time steps of the same ad group, as shown in Figure 2 above.
+A SEQ_LEN = 6 variant, used only for the R1 robustness check (§5.5), yields 125 sequences. Splits are constructed at the ad-group level (not by row) to prevent leakage across time steps of the same ad group, as shown in Figure 2 above.
 
 ---
 
@@ -227,7 +243,7 @@ An HC3-robust OLS interaction model (`log_ROAS ~ log_CTR × is_search + log_cost
 | Marginal effect, Search | 0.949 |
 | Marginal effect, Shopping | 0.563 |
 
-**H3: supported.** A one-log-unit increase in CTR is associated with roughly 68% more log-ROAS lift on Search campaigns than on Shopping campaigns — consistent with Search traffic reflecting more deliberate, higher-intent queries.
+**H3: supported.** A one-log-unit increase in CTR is associated with roughly 68% more log-ROAS lift on Search campaigns than on Shopping campaigns — consistent with Search traffic reflecting more deliberate, higher-intent queries. This finding is corroborated at the distributional level by the R2 robustness check in §5.7.
 
 ### 5.4 H4 — Two-stage sequential ROAS prediction
 
@@ -242,7 +258,7 @@ An HC3-robust OLS interaction model (`log_ROAS ~ log_CTR × is_search + log_cost
 
 **H4a: null.** Logistic regression has the highest AUC regardless of whether the comparison is read as written (BayesianLSTM-Cls: 0.589 < 0.614) or as the pipeline's own printed verdict computes it (LSTM-Cls: 0.612 < 0.614) — a framing mismatch between the stated hypothesis and the script's verdict logic that does not change the conclusion but is worth fixing in code. At N=174 real training sequences, the binary conversion signal appears close to linearly separable, so the added capacity of a recurrent classifier buys nothing.
 
-**Stage 2 — regression (H4b/H4c).** Conditional on non-zero ROAS, seven architectures are compared on log-ROAS RMSE using a group-level train/val/test split (174/24/24).
+**Stage 2 — regression (H4b).** Conditional on non-zero ROAS, seven architectures are compared on log-ROAS RMSE using a group-level train/val/test split (174/24/24).
 
 <p align="center"><img src="assets/fig1_regression_comparison.png" width="680" alt="Regression-stage model comparison"></p>
 <p align="center"><em>Figure 4. Log-ROAS regression performance (RMSE, MAE, R²) across seven architectures on the held-out test split.</em></p>
@@ -266,9 +282,7 @@ Of 21 pairs, 14 are significant at raw p<0.05; **8 remain significant after FDR 
 
 **H4b: supported.** LSTM (RMSE = 1.2099) significantly outperforms Ridge (RMSE = 1.6033); Diebold–Mariano p_raw = 0.0078, p_FDR = 0.0316.
 
-**H4c (Mamba sequence-length robustness):** evaluated at SEQ_LEN = 4 vs. 6; see `readme/README_v4_full.md` §4 for the full per-length breakdown. Mamba is not the accuracy leader at either length, but its role in this design is specifically to test robustness to sequence-length variation rather than to win on raw RMSE.
-
-**H4d — domain gap as diagnostic evidence, not noise (corrected v5.2):**
+**H4c — domain gap as diagnostic evidence, not noise (corrected v5.2):**
 
 > **What changed from v5.1:** the previous version of this table paired `best_val_real` with a train-loss value taken from `best_aug_ep` (the epoch that minimizes *augmented*-validation loss), not from `best_real_ep` (the epoch that actually minimizes *real*-validation loss and produces `best_val_real`). Those are different epochs for all five architectures. The corrected table below pairs every `gap_real` with the train loss **at the same epoch it was computed from** (`train_at_real_epoch`, added to `domain_gap_report()` — see `trainer_domain_gap_report_PATCH.py`), and applies `trainer.py`'s actual sign convention (`gap_real = val_real − train`) consistently. The result reverses the v5.1 interpretation.
 
@@ -297,7 +311,13 @@ Of 21 pairs, 14 are significant at raw p<0.05; **8 remain significant after FDR 
 
 **Corrected interpretation:** under `trainer.py`'s own definition, **Mamba is the only architecture that shows a classic overfitting signature** on real validation data (its final training loss is lower than its best real-validation loss). The other four architectures show the *opposite* pattern (train loss higher than real-validation loss at their respective best epochs) — this is not underfitting or overfitting in the standard sense; it is most plausibly explained architecture-by-architecture: for BayesianLSTM specifically (by far the largest magnitude, −0.2821), Monte-Carlo dropout remaining active during training-loss computation is a known mechanism for inflating reported train loss relative to a val-loss pass where stochastic regularization is typically disabled or averaged out. For LSTM/GRU/BiLSTM the effect is smaller and may simply reflect an early-training snapshot at their respective best-real-validation epochs (22, 36, 23) that hadn't yet converged as far on the training objective as it eventually would. None of the five architectures should be described as "the most overfitting-prone" on the strength of `gap_real` alone without this qualification.
 
-### 5.5 H5 — Group-level attribution explainability
+**H4c: supported** — the augmentation-to-real domain gap differs systematically across architectures, with Mamba the sole architecture exhibiting the classic overfitting signature. This diagnostic is contextualized further by the R1 robustness check immediately below, which asks whether Mamba's comparatively weak raw accuracy (Table above) is a sequence-length artifact.
+
+### 5.5 R1 — Robustness check: Mamba sequence-length sensitivity
+
+This is a supplementary robustness check, not an independent hypothesis (see the "Hypothesis restructuring" note above). Mamba is evaluated at SEQ_LEN = 4 vs. 6 to test whether its comparatively weak accuracy in §5.4 is an artifact of sequence length rather than a stable architectural property; see `readme/README_v4_full.md` §4 for the full per-length breakdown. Mamba is not the accuracy leader at either length. This null result is itself informative: it corroborates, in a new empirical setting, prior evidence that selective state-space architectures can be disadvantaged on short, cold-start-length sequences, and it means the H4c overfitting finding above cannot be dismissed as a length artifact — Mamba's failure mode (overfitting) is qualitatively distinct from, and not resolved by, varying sequence length.
+
+### 5.6 H5 — Group-level attribution explainability
 
 GS-SHAP decomposes attribution at the level of **HSIC-defined feature groups**, not individual features. An eigengap criterion on the training data selects K=2 groups from the 7 available features: **Group 0** = {CTR, CVR, Depth, log_cost, log_impression}; **Group 1** = {hour_sin, hour_cos}. All features within a group receive identical attribution values by construction — reporting per-feature values as if they were 7 independent findings would misrepresent the method.
 
@@ -327,11 +347,13 @@ Method agreement (Spearman ρ across GS-SHAP, Integrated Gradients, and Permutat
 | C1 High-Conversion | 0.559 (moderate) | 9 ⚠ underpowered |
 | C2 Click-Rich | 0.813 (high) | 8 ⚠ underpowered |
 
-All three clusters fall below the conventional n=10 threshold for these tests. The group-level Kruskal–Wallis result on Group 0 (p = 0.0428) is treated as marginal rather than decisive for this reason; the leave-one-ad-group-out check in §5.7 is the primary source of generalization evidence for H5, not the cluster-level KW test alone.
+All three clusters fall below the conventional n=10 threshold for these tests. The group-level Kruskal–Wallis result on Group 0 (p = 0.0428) is treated as marginal rather than decisive for this reason; the leave-one-ad-group-out check in §5.8 is the primary source of generalization evidence for H5, not the cluster-level KW test alone.
 
 *On the FSD statistic underlying this stage's augmentation:* `07_explainability.py` reuses the same augmentation call as `05_prediction.py` (identical VAE-loss trajectory: 53,648.92 → 45,476.11 → 38,695.28; identical Copula KS = 0.097), so it is reasonable to infer the same **FSD = −0.0465** applies — but this value is not independently printed at this call site in the captured log, so it should be treated as inferred rather than separately confirmed.
 
-### 5.6 H6 — Cross-campaign domain shift and adaptation
+### 5.7 R2 — Robustness check: Cross-campaign domain shift and adaptation
+
+This is a supplementary robustness check, not an independent hypothesis (see the "Hypothesis restructuring" note above). Its purpose is to establish, at the distributional level, whether the Search-vs.-Shopping heterogeneity already identified at the outcome level under H3 (§5.3) is accompanied by an underlying feature-distribution shift, and whether that shift is practically exploitable via domain adaptation.
 
 <p align="center"><img src="assets/fig5_ks_domain_shift.png" width="680" alt="KS-test domain shift by feature"></p>
 <p align="center"><em>Figure 8. Kolmogorov–Smirnov test statistics for feature-distribution shift between Search and Shopping campaigns.</em></p>
@@ -346,7 +368,7 @@ All three clusters fall below the conventional n=10 threshold for these tests. T
 | CVR | 0.0383 | 7.10 × 10⁻³ | Yes |
 | hour_cos | 0.0296 | 0.068 | No |
 
-**H6: supported** (6 of 7 features differ significantly between Search and Shopping campaigns, motivating a domain-adaptive design in principle).
+**R2 finding:** 6 of 7 features differ significantly between Search and Shopping campaigns, confirming at the distributional level the same heterogeneity H3 already established at the outcome level, and motivating a domain-adaptive design in principle.
 
 **Domain adaptation (Search → Shopping, frozen-encoder fine-tuning):**
 
@@ -357,7 +379,7 @@ All three clusters fall below the conventional n=10 threshold for these tests. T
 
 The improvement from adaptation is small. The value of this analysis is the empirical motivation it provides for domain-adaptive design generally (via the KS-test result above), not a claim that this specific 50%-frozen fine-tuning recipe delivers a meaningful performance gain — that claim is explicitly not made.
 
-### 5.7 RQ7 — External-validity checks (corrected v5.2 — real per-fold data)
+### 5.8 RQ6 — External-validity checks (corrected v5.2 — real per-fold data)
 
 > **What changed from v5.1:** `09_robustness.py::main()` computed 37 real per-fold RMSE values inside `run_logo_cv()` but never captured or saved them — only the printed mean ± SD survived, and Figure 9 was drawn as a synthetic normal distribution "centered on reported mean±SD." The pipeline was patched (`09_robustness_LOGO_CV_SAVE_PATCH.py`) to persist the DataFrame and then **actually re-run** end-to-end against the real dataset, using the exact `GRUForecaster` architecture (`sadaf/models/gru.py`: hidden=128, 2 layers, dropout=0.2). The 37 real values are now in `figures/logo_cv_fold_rmse.csv`.
 
@@ -373,19 +395,19 @@ The improvement from adaptation is small. The value of this analysis is the empi
 
 The re-run mean and SD are within run-to-run floating-point/dataloader-shuffle tolerance of the originally reported values, which is itself informative: it suggests the original 1.2427 ± 0.6042 was a genuine (if unsaved) computation rather than a fabricated placeholder, and that the model architecture used here matches the one actually used for the headline run. This is consistent with — slightly lower than, and with slightly less spread than — the single group-split test RMSE of 1.2099 reported in §5.4, as expected since LOGO-CV is a harder, fold-averaged generalization test rather than a single lucky split. A regularization grid search (dropout × weight decay, GRU-based) finds a best configuration of dropout = 0.2, weight_decay = 1×10⁻⁴, RMSE = 1.4073, which is not directly comparable to the headline LSTM number above (different architecture, different sweep) but is retained here as a robustness reference point.
 
-These checks support generalization **within** this single-platform, single-month, single-advertiser case. They do not, and are not claimed to, establish generalization to other platforms, other months, or other advertisers — that boundary is the explicit scope of RQ7.
+These checks support generalization **within** this single-platform, single-month, single-advertiser case. They do not, and are not claimed to, establish generalization to other platforms, other months, or other advertisers — that boundary is the explicit scope of RQ6.
 
 ---
 
 ## 6. Discussion
 
-Read together, the six hypotheses sketch a coherent picture of a Naver-concentrated advertiser's Search/Shopping ecosystem, and — more importantly for the framing question in RQ0 — one that partially agrees with and partially departs from patterns established in Google-dominated markets:
+Read together, the five core hypotheses (H1–H5) and the two supplementary robustness checks (R1, R2) sketch a coherent picture of a Naver-concentrated advertiser's Search/Shopping ecosystem, and — more importantly for the framing question in RQ0 — one that partially agrees with and partially departs from patterns established in Google-dominated markets:
 
-- **Where it agrees:** CTR causally drives conversion (H1) and the CTR→ROAS relationship is stronger for Search than Shopping traffic (H3) — both consistent with intuitions from Google-market literature about query intent and immediate-click behavior.
+- **Where it agrees:** CTR causally drives conversion (H1) and the CTR→ROAS relationship is stronger for Search than Shopping traffic (H3) — both consistent with intuitions from Google-market literature about query intent and immediate-click behavior, and corroborated at the distributional level by the R2 check.
 - **Where it complicates the standard story:** browsing depth behaves as a *negative* suppressor rather than a positive mediator (H2) — deeper browsing here signals hesitation, not engagement, which is not the direction typically assumed. And a simple logistic classifier beats every recurrent architecture on the antecedent classification task (H4a) — at this sample size, the added representational capacity of sequence models is not merely unnecessary, it is actively worse, likely because of variance rather than bias.
-- **Where sparsity is the story:** the two-stage design exists specifically because N=174 real training sequences is not enough to fit a deep sequence model directly on raw data. The augmentation pipeline's own diagnostics (FSD well under threshold, but domain gaps that differ by up to 0.35 loss units across architectures) are as much a finding as the headline RMSE numbers. With the epoch-consistency fix in §5.4, the corrected reading is that **Mamba** — not BayesianLSTM — is the architecture showing the classic overfitting signature on real validation data, even though it has the weakest raw accuracy; the other four architectures' train-loss-above-val-loss pattern is most plausibly a stochastic-regularization or undertrained-snapshot artifact (most pronounced for BayesianLSTM's MC-dropout) rather than evidence that they are more overfitting-prone. This distinction matters for how the domain-gap diagnostic should be read in future work using this pipeline.
+- **Where sparsity is the story:** the two-stage design exists specifically because N=174 real training sequences is not enough to fit a deep sequence model directly on raw data. The augmentation pipeline's own diagnostics (FSD well under threshold, but domain gaps that differ by up to 0.35 loss units across architectures) are as much a finding as the headline RMSE numbers. With the epoch-consistency fix in §5.4, the corrected reading is that **Mamba** — not BayesianLSTM — is the architecture showing the classic overfitting signature on real validation data (H4c), even though it has the weakest raw accuracy at either sequence length tested (R1, §5.5); the other four architectures' train-loss-above-val-loss pattern is most plausibly a stochastic-regularization or undertrained-snapshot artifact (most pronounced for BayesianLSTM's MC-dropout) rather than evidence that they are more overfitting-prone. This distinction matters for how the domain-gap diagnostic should be read in future work using this pipeline.
 
-None of this establishes that Korean, Naver-concentrated, or single-platform markets behave categorically differently from Google-dominated ones — the sample is one advertiser, one month, one platform. What it does establish is that none of the six hypotheses *failed outright* under this structurally different market, which is itself informative: the causal and predictive machinery developed elsewhere appears to travel, even if some of the qualitative details (suppression instead of mediation, logistic regression beating recurrent nets) do not travel unchanged.
+None of this establishes that Korean, Naver-concentrated, or single-platform markets behave categorically differently from Google-dominated ones — the sample is one advertiser, one month, one platform. What it does establish is that none of the five core hypotheses *failed outright* under this structurally different market, which is itself informative: the causal and predictive machinery developed elsewhere appears to travel, even if some of the qualitative details (suppression instead of mediation, logistic regression beating recurrent nets) do not travel unchanged. The two robustness checks (R1, R2) neither overturn nor meaningfully qualify this picture on their own — they are reported in full because, at this sample size, that is itself part of the evidence, not because they compete with H1–H5 for headline status.
 
 ---
 
@@ -393,15 +415,16 @@ None of this establishes that Korean, Naver-concentrated, or single-platform mar
 
 | Item | Detail | Status |
 |---|---|---|
-| **Single advertiser, single month** | Every result in §5 is conditional on this one advertiser's March 2025 data. RQ7's LOGO-CV and multi-advertiser checks test generalization *within* this scope only. | Explicit scope boundary, not a defect |
+| **Single advertiser, single month** | Every result in §5 is conditional on this one advertiser's March 2025 data. RQ6's LOGO-CV and multi-advertiser checks test generalization *within* this scope only. | Explicit scope boundary, not a defect |
 | **DM table discrepancy (unresolved)** | A second, independently computed Diebold–Mariano table in the robustness appendix (`readme/README_v4_full.md`, Appendix W6) reports **different p-values** for the same model pairs used in §5.4 (e.g., LSTM vs. Mamba: p=0.0199, p_BH=0.0497, p_Bonferroni=0.1989, Cohen's d=−0.4197 in the appendix table, vs. p_raw=0.0024, p_FDR=0.0251 in the primary §5.4 table). These have not been reconciled — they may reflect different resampling, a different data subset, or a different DM implementation. **Do not average or merge the two tables.** The §5.4 table (tied to `05_prediction.py`/FIX-10) is used as primary throughout this document until the discrepancy is traced in code. |
 | **FSD seed coverage** | `sadaf/augmentation/copula.py` and `sadaf/augmentation/mbb.py` do not yet accept an explicit `seed` parameter (only `train_vae()`/`vae_augment()` do, via FIX-21). This is the likely reason FSD is not exactly reproducible *within* a single call site across separate runs, even though it consistently passes the <2.0 acceptance threshold. | Recommended follow-up |
 | **438-missing-value figure (§4.4)** | Not reproduced in this run's captured log; carried over from an earlier pipeline version. | Needs re-derivation before citation |
 | **H4a hypothesis/verdict framing mismatch** | The hypothesis as written compares BayesianLSTM-Cls to LR-Cls; the pipeline's printed verdict line compares LSTM-Cls to LR-Cls. Both reach the same conclusion (NULL), but the script's verdict logic should be updated to match the hypothesis as stated. | Code fix recommended, does not change conclusion |
-| **Underpowered clusters (H5)** | All three ad-group clusters used for the Kruskal-Wallis / Spearman-agreement analysis have n<10 test sequences. | Reported explicitly in §5.5; treat as marginal, not decisive |
-| **Regularization grid vs. headline model** | The best regularization configuration (§5.7) uses a different sweep (GRU-based dropout × weight-decay grid) than the headline LSTM result in §5.4 and is not directly comparable. | Reference point only |
+| **Underpowered clusters (H5)** | All three ad-group clusters used for the Kruskal-Wallis / Spearman-agreement analysis have n<10 test sequences. | Reported explicitly in §5.6; treat as marginal, not decisive |
+| **Regularization grid vs. headline model** | The best regularization configuration (§5.8) uses a different sweep (GRU-based dropout × weight-decay grid) than the headline LSTM result in §5.4 and is not directly comparable. | Reference point only |
 | ~~**Fig 6 epoch mismatch / reversed overfitting interpretation**~~ | ~~`gap_real`'s train-loss term came from a different epoch than `best_val_real`, and the overfitting/underfitting direction in prose was reversed relative to `trainer.py`'s sign convention.~~ | **Resolved in v5.2** — see version-note item 4, `trainer_domain_gap_report_PATCH.py`, and §5.4. |
-| ~~**Fig 9 synthetic distribution**~~ | ~~The 37 real per-fold LOGO-CV RMSE values were computed but discarded; Figure 9 showed a synthetic reconstruction centered on the reported mean±SD instead.~~ | **Resolved in v5.2** — see version-note item 5, `09_robustness_LOGO_CV_SAVE_PATCH.py`, `logo_cv_fold_rmse.csv`, and §5.7. |
+| ~~**Fig 9 synthetic distribution**~~ | ~~The 37 real per-fold LOGO-CV RMSE values were computed but discarded; Figure 9 showed a synthetic reconstruction centered on the reported mean±SD instead.~~ | **Resolved in v5.2** — see version-note item 5, `09_robustness_LOGO_CV_SAVE_PATCH.py`, `logo_cv_fold_rmse.csv`, and §5.8. |
+| **Hypothesis renumbering (H4c/H6 → R1/R2)** | Mamba's sequence-length check (formerly H4c) and the cross-campaign KS-test check (formerly H6) are now reported as robustness checks rather than independent hypotheses, to keep the paper's core contribution (causal pillar + Bayesian predictive pillar) sharply delineated from supporting diagnostics. No numerical results changed. | Framing change only, applied in v5.2 — see version note above |
 
 ---
 
@@ -410,7 +433,7 @@ None of this establishes that Korean, Naver-concentrated, or single-platform mar
 ```
 sadaf/
 ├── assets/                              # Figures embedded in this README
-│   ├── sadaf_framework_architecture_bw_searchm.png  # Figure 1 — framework architecture
+│   ├── sadaf_framework_architecture_v2_robustness.png  # Figure 1 (v5.2) — framework architecture, H1–H5 core + R1/R2/RQ6 robustness
 │   ├── data_construction_architecture_v2.png  # Figure 2 — dataset construction pipeline
 │   ├── fig1_regression_comparison.png
 │   ├── fig6_domain_gap_corrected.png     # Figure 6 (corrected, v5.2) — epoch-consistent domain gap
@@ -537,7 +560,7 @@ python patches/make_fig9_real.py         figures/logo_cv_fold_rmse.csv
 | FIX-19/19b/20 | `09_robustness.py` | Models and batches moved to `DEVICE` consistently; missing `DEVICE` import added. |
 | FIX-21 | `sadaf/augmentation/pipeline.py` | `train_vae()` / `vae_augment()` re-fix the RNG seed on entry, for FSD reproducibility. |
 | FIX-22/23 | `05_prediction.py` | Seed re-fixed immediately before `model_registry` instantiation and again before each model's individual training loop, for H4b winner reproducibility. |
-| **FIX-24** | `09_robustness.py` | **`main()` now captures `run_logo_cv()`'s return value instead of discarding it, and writes all 37 per-fold RMSE rows to `figures/logo_cv_fold_rmse.csv`.** Fixes Figure 9 (§5.7), which previously showed a synthetic distribution reconstructed from the mean±SD only. See `patches/09_robustness_LOGO_CV_SAVE_PATCH.py`. |
+| **FIX-24** | `09_robustness.py` | **`main()` now captures `run_logo_cv()`'s return value instead of discarding it, and writes all 37 per-fold RMSE rows to `figures/logo_cv_fold_rmse.csv`.** Fixes Figure 9 (§5.8), which previously showed a synthetic distribution reconstructed from the mean±SD only. See `patches/09_robustness_LOGO_CV_SAVE_PATCH.py`. |
 | **FIX-25** | `sadaf/training/trainer.py` | **`domain_gap_report()` adds an explicit `train_at_real_epoch` field** so the train-loss value reported alongside `gap_real`/`best_val_real` always comes from `best_real_ep`, not `best_aug_ep`. Fixes Figure 6 (§5.4), whose plotted train-loss bar and reported `gap_real` previously came from two different epochs, and whose prose interpretation had the overfitting/underfitting direction reversed. See `patches/trainer_domain_gap_report_PATCH.py`. |
 
 All fixes are idempotent: each checks for its own `[FIX-N]` marker string before modifying a file, so re-running the patch cell against an already-patched repository is a no-op.
