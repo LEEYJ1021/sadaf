@@ -1,6 +1,6 @@
 # SADAF: A Unified Causal–Predictive–Explainable Framework for Cold-Start Advertisement Performance Forecasting
 
-**A boundary-condition case study on a single-platform-concentrated search advertising market (Naver, South Korea, March 2025)**
+**A boundary-condition case study on a single-platform-concentrated search advertising market (South Korea, March 2025)**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange.svg)](https://pytorch.org/)
