@@ -1,60 +1,92 @@
 # SADAF Full Hypothesis Results Table
 
 This table consolidates the verdict, method, and key numerical results
-for every research question and hypothesis tested in SADAF, including
-the robustness-supplement findings (W-series) that qualify or contextualize
+for every research question and hypothesis tested in SADAF, together
+with the robustness-supplement findings that qualify or contextualize
 the main results.
+
+> **v6.0 alignment note.** This table has been fully revised to match
+> the submitted manuscript and `README.md` (v6.0). Two corrections
+> apply throughout: (1) all sample sizes are pooled or drawn across a
+> **37-advertiser panel**, not one advertiser; and (2) the explainability
+> row (previously "H5, GS-SHAP") now reports the individual-level,
+> cross-verified attribution design (Individual SHAP + Permutation SHAP
+> + Integrated Gradients), which replaced group-level GS-SHAP entirely.
+> Numbers below are the ones that appear in the manuscript; an earlier
+> internal run with a smaller test split (n=34) and different model
+> rankings (e.g., Bayesian LSTM as the H4b winner) has been superseded
+> and is not reproduced here — see `readme/README_v5_full.md` for that
+> prior run's captured output, retained for provenance only.
 
 ## Primary Hypotheses
 
 | RQ / H | Hypothesis | Method | Key Result | Verdict |
 |---|---|---|---|---|
-| RQ1 / H1 | High-CTR ads causally increase conversion probability | PSM (caliper=0.1σ) + Doubly Robust IPW | IPW-ATT = 0.1286 (primary); PSM-ATT = 0.1347, 95% CI [0.1254, 0.1434]; n_matched = 14,987 | ✓ Supported — IPW primary; PSM corroborating. Residual covariate imbalance (`log_impression`, `log_cost`, \|SMD\|>0.1) explicitly disclosed and corrected via DR weighting. |
-| RQ2 / H2 | Browsing depth mediates CTR→Conversion | Baron-Kenny + Bootstrap (B=2,000) | a = −0.3077, b = −0.0861, indirect (a×b) = 0.0265, 95% CI [0.0200, 0.0337] | △ Negative suppressor (a<0, b<0, a×b>0): Depth proxies decision hesitancy, not engagement. Proportion mediated (−42.8%) reported in appendix only; sign pattern is the primary finding. |
-| RQ3 / H3 | Campaign type moderates CTR→ROAS slope | OLS, HC3-robust SE, interaction term | β_interaction = 0.3860 (p < 0.001); ME_Search = 0.949; ME_Shopping = 0.563 | ✓ Supported — Search campaigns show a steeper CTR→ROAS slope than Shopping. |
-| RQ4 / H4a | Bayesian LSTM classifier outperforms logistic regression for has_roas prediction | BayesianLSTM-Cls vs. LR-Cls (AUC) | BayesianLSTM-Cls AUC = 0.6107; LR-Cls AUC = 0.6143 | ⚬ NULL (boundary condition) — sparse ad-group sequences are largely linearly separable at this sample size (n=2,211 sequences); LR is competitive. Framed as theoretically informative, not a framework failure. |
-| RQ4 / H4b | Best recurrent architecture outperforms Ridge/MLP baselines for log-ROAS regression | DM test, bootstrap RMSE CI | BayesianLSTM RMSE = 1.4219 [1.1075, 1.7312] vs. Ridge RMSE = 2.0924, MLP RMSE = 2.0233 | ✓ Supported — BayesianLSTM > LSTM (DM p=0.044), BayesianLSTM > Mamba (DM p=0.033); vs. GRU/BiLSTM: not significant (reported conservatively; see W6 multiple-comparison caveat below). |
-| RQ4 / H4c | Mamba is more robust to sequence-length variation than LSTM/GRU | ΔRMSE per +2 SEQ_LEN (4→6), DM test at fixed SEQ_LEN | Mamba: SL4=1.5793→SL6=1.5752 (Δ=−0.0041); LSTM: SL4=1.5669→SL6=1.5725 (Δ=+0.0056); GRU: Δ=+0.4061 | ✓ Supported (robustness only, not accuracy) — DM tests at fixed SEQ_LEN are non-significant, as expected under H4c. |
-| RQ4 / Bayesian | Calibrated posterior uncertainty quantification | MC Dropout (n=500) + temperature scaling (T=1.5) | 95% CI coverage = 94.1%; mean interval width = 7.1034 | ✓ Novel contribution — well-calibrated (within 3pp of all four nominal coverage levels tested: 50/80/90/95%). |
-| RQ4 / ProtoNet | Cold-start K-shot ROAS inference | Prototypical Network, cosine-similarity weighting | K=1: RMSE=2.3187; K=2: 2.2159; K=3: 2.3469; K=5: 2.2784; full-data GRU baseline: 1.5670 | ✓ Novel contribution, with caveat — establishes a cold-start inference capability; absolute RMSE remains well above the full-data baseline (see W5 trajectory analysis). |
-| RQ5 / H5 | Ad-group clusters show distinct, convergent attribution patterns | KMeans (k=3) + Kruskal-Wallis η² + 4-method Spearman ρ agreement | η²_max = 0.525 (hour_sin/hour_cos, p<0.001); 4/7 features significant; cluster ROAS Kruskal-Wallis p<0.0001 | ✓ Supported — cluster-specific attribution patterns are statistically distinct, though exploratory given small per-cluster n (7/17/10). See W4 for attribution-method agreement caveats. |
-| RQ6 / H6 | Search and Shopping campaigns exhibit significant feature distribution shift | Kolmogorov-Smirnov test, 7 features | 6/7 features p<0.05; target (log-ROAS) KS=0.0398 | ✓ Supported — motivates frozen-encoder domain adaptation; fine-tuning improvement = +0.2% (modest; framed as theoretical justification, not performance claim). |
+| RQ0 | Do causal, predictive, and explainability patterns from Google-dominated markets replicate in a domestically-dominated, Naver-and-Kakao ecosystem? | Framing question, answered by the pattern of support across H1–H5, R1, R2, RQ6 | See synthesis in README §6 (Discussion) | Not itself tested — answered by the pattern below |
+| H1 | High-CTR ads causally increase conversion probability | PSM (caliper=0.1σ) + Doubly Robust IPW, pooled across 37-advertiser panel | IPW-ATT = 0.1286 (primary); PSM-ATT = 0.1347, 95% CI [0.1254, 0.1434]; n_matched = 14,987 | ✓ Supported — IPW primary; PSM corroborating. Residual covariate imbalance (`log_impression`, `log_cost`, \|SMD\|>0.1) explicitly disclosed and corrected via DR weighting. |
+| H2 | Browsing depth mediates CTR→Conversion | Baron-Kenny + Bootstrap (B=2,000) | a = −0.3077, b = −0.0861, indirect (a×b) = 0.0265, 95% CI [0.0200, 0.0337] | △ Informative departure from the hypothesized mediating mechanism — negative suppressor (a<0, b<0, a×b>0): Depth proxies decision hesitancy, not engagement. Reported as such, not as "H2 supported," since the opposite mechanism from the one hypothesized was found. Indirect effect itself remains statistically distinguishable from zero. |
+| H3 | Campaign type moderates CTR→ROAS slope | OLS, HC3-robust SE, interaction term, n=9,069 (pooled across panel) | β_interaction = 0.386 (p < .0001); ME_Search = 0.949; ME_Shopping = 0.563 | ✓ Supported — Search campaigns show a ~68% steeper CTR→ROAS slope than Shopping. Corroborated distributionally by R2. |
+| H4a | A parsimonious linear classifier matches or exceeds recurrent architectures for has_roas prediction under extreme sparsity (n<200 training sequences) | Logistic Regression vs. LSTM, Bayesian LSTM, MLP (AUC), n=174 train / 24 test sequences | Logistic Regression AUC = 0.6143 (best); LSTM = 0.6115; Bayesian LSTM = 0.5894; MLP = 0.5445 | ✓ Supported — logistic regression attains the highest AUC of any model regardless of which recurrent architecture it is benchmarked against; near-linear separability at n≈200 makes added recurrent capacity actively counterproductive, not merely unnecessary. |
+| H4b | A recurrent architecture with the augmentation pipeline achieves significantly lower forecasting error than linear/feed-forward baselines | Diebold-Mariano test, raw + BH-FDR correction across 21 pairs, n=24 test sequences | LSTM RMSE = 1.2099 (best); of 21 pairs, 18 computable (3 non-convergent: Mamba–Ridge, Mamba–MLP, Ridge–MLP); 13/18 significant raw p<.05; 8/18 significant after FDR correction | ✓ Supported — LSTM beats GRU, BiLSTM, Mamba, Ridge, MLP, and Bayesian LSTM at FDR-corrected significance. Non-significant pairs read via a priori MDE (dz=0.60 raw / 0.88 FDR-equivalent at n=24), not post-hoc power. |
+| H4c | The sign of the real-validation/training-loss gap differs across architectures, with at most one showing the classical overfitting pattern | Epoch-consistent domain-gap diagnostic (train loss paired with the epoch of best real-validation loss) | Mamba: gap_real = +0.1142 (val > train — overfitting signature); Bayesian LSTM, LSTM, GRU, BiLSTM: all gap_real < 0 (train > val — not overfitting) | ✓ Supported, descriptive formulation — Mamba is the only architecture displaying the classical overfitting signature; not tested for statistical significance (gap_real is a deterministic single-pair statistic per architecture, not a distribution). |
+| R1 | (Robustness check, not an independent hypothesis) Is Mamba's weaker 4-step accuracy an artifact of sequence length? | Mamba re-evaluated at SEQ_LEN=6 vs. SEQ_LEN=4 | Mamba remains the weakest or near-weakest performer at both lengths | Corroborates short-sequence vulnerability documented by Liu et al. (2025) and Wang et al. (2025); context for H4c, not a standalone finding. |
+| H5 | Ad-group clusters exhibit statistically distinct engagement/spend attribution patterns, corroborated across independent methods | Individual SHAP (primary) + Permutation SHAP + Integrated Gradients, computed on identical model/data; K-means (k=3) row-level clusters (n=1,214 / 217 / 28 observations; 39 / 41 / 13 ad groups) | Kruskal-Wallis (Group 0 attribution, by method): Ind.SHAP H=72.213 p<.0001; Perm.SHAP H=143.831 p<.0001; IG H=18.277 p=.0001. Cross-method Spearman ρ: Shapley-family pairs 0.857–0.964; Shapley-vs-IG pairs 0.607–0.893 | ✓ Supported — all three independently computed methods agree Group 0 (engagement/spend) attribution differs across clusters; all three agree temporal (Group 1) attribution is consistently more concentrated than engagement attribution, across every cluster. Replaces an earlier group-level GS-SHAP design not warranted at this feature dimensionality (Chamma et al., 2024). |
+| R2 | (Robustness check, not an independent hypothesis) Do Search and Shopping campaigns exhibit significant feature-distribution shift? | Kolmogorov-Smirnov test, 7 features; frozen-encoder domain adaptation | 6/7 features p<.05 (all but hour-cosine, p=.068); naive-transfer RMSE=1.3176 → adapted-transfer RMSE=1.3128 (+0.4%) | Corroborates H3 distributionally. Domain-adaptation gain is modest and reported as motivation for domain-adaptive design generally, not a performance-superiority claim. Previously mislabeled "H6" in an earlier draft — this is a robustness check, not an independent sixth hypothesis. |
+| RQ6 | Does the predictive framework generalize to advertisers not seen during training, within this market/period/agency-provenance scope? | Leave-one-advertiser-out (LOAO) cross-validation across all 37 advertisers, GRU forecaster (hidden=128, layers=2, dropout=0.2) | Mean RMSE = 1.2268, SD = 0.5789, 95% CI [1.040, 1.413], n=37 folds; min/max = 0.260/3.084 | ✓ Supported, within stated scope only — each fold withholds an entire advertiser, providing direct evidence of generalization to unseen advertisers. Numerically close to, but not a replication of, the H4b LSTM result (different architecture: GRU vs. LSTM). Previously mislabeled "LOGO-CV across 37 ad groups" within one advertiser — corrected to leave-one-**advertiser**-out across 37 real, distinct advertisers. |
 
-## Robustness Supplement (W-series)
+## Exploratory Analyses (not part of the core hypothesis set)
+
+These analyses are retained in the codebase and documented for
+completeness but do not appear as claims in the submitted manuscript.
+
+| Analysis | Method | Key Result | Status |
+|---|---|---|---|
+| Bayesian calibration | MC Dropout (n=500) + temperature scaling on Bayesian LSTM | 95% CI coverage and interval width computed at four nominal levels (50/80/90/95%) | Exploratory — informed pipeline development; not reported as a manuscript claim or numbered hypothesis. |
+| ProtoNet cold-start K-shot inference | Prototypical Network, cosine-similarity weighting, K=1→21 support examples | Cold-start RMSE trajectory computed vs. full-data GRU baseline | Exploratory — retained in `sadaf/models/protonet.py`; not part of H1–H5/R1–R2/RQ6. |
+| IS/DSS theoretical grounding | Signaling Theory (CTR-quartile monotonicity) and Resource Scarcity (ROAS uncertainty vs. impression volume) empirical tests | Mixed/inconclusive results at current sample sizes | Exploratory — not part of the submitted manuscript's claims. |
+
+## Robustness Supplement (Weakness-Response Analyses)
 
 | Code | Concern Addressed | Method | Key Result | Implication |
 |---|---|---|---|---|
-| W1a | Augmentation method quality varies | KS + MMD per method vs. real data | MBB: mean KS=0.011, MMD=0.0056 (best fidelity); Copula: KS=0.112; β-VAE: KS=0.404 (most novel but least faithful) | Validates that the combined three-method pool balances fidelity (MBB) against novelty (β-VAE), rather than over-relying on any one generator. |
-| W1b | Performance gains may be augmentation-driven, not data-driven | Data-scaling curve, 20–100% of real training data, 3 seeds, power-law fit | RMSE roughly stable (1.32–1.48) across fractions; no clear monotonic improvement with more real data at this scale | Suggests current sample size has not yet reached a regime of strong returns to additional real data; results should be read as scale-limited. |
-| W1c | Hold-out RMSE may not reflect true cross-ad-group generalization | Leave-One-Ad-Group-Out CV (37 groups) | LOGO-CV RMSE = 1.2041 ± 0.5976 vs. hold-out GRU RMSE = 1.5670 (Δ = −0.36) | LOGO-CV RMSE is *lower* than hold-out, with high variance (±0.60) — generalization across ad groups is plausible but uncertain; large group-level RMSE spread reported, not hidden. |
-| W2a | Single-month data may hide temporal instability | Hold-one-hour-block-out CV (4 blocks) | RMSE range 0.39–1.16 across blocks; CV std(RMSE) = 0.38 | Moderate temporal variability; Evening block (n=1) result is unstable and should not be over-interpreted. |
-| W2b | Single-advertiser data limits external validity | Synthetic 5-advertiser simulation (CTR/cost scale, ROAS noise) | Pre-trained GRU RMSE on synthetic advertisers: 2.07–2.55, all *worse* than original GRU RMSE (1.567) and all with negative R² | Honest negative result: the model does **not** generalize well to out-of-distribution synthetic advertisers without retraining; reported as a genuine limitation rather than smoothed over. |
-| W3 | Training curves show train/val divergence (possible overfitting) | Quantified best_val − final_train gap; 3×3 dropout × weight_decay grid | Largest gap: Mamba (+0.97, 18.4×); smallest: BayesianLSTM (+0.42, 2.3×). Best regularisation: dropout=0.4, weight_decay=1e-3 (RMSE=1.3777) | Confirms overfitting is present across all five architectures to varying degrees; BayesianLSTM's built-in dropout-based regularization is the most resistant. Grid search results provided for replication. |
-| W4 | Attention attribution disagrees with other 3 methods (ρ as low as −0.04) | 3-method (excl. Attention) consensus; temporal-weight visualization | 3-method avg ρ: C0=0.719, C1=0.624, C2=0.699 (all moderate-to-high) | Reframes Attention as measuring a different axis (temporal position vs. feature importance); recommends excluding it from the triangulation claim in the main text. |
-| W5 | ProtoNet K-shot RMSE far exceeds full-data baseline | Cold-start trajectory (K=1→21) vs. naive-mean baseline; NN-prototype vs. random selection | NN-prototype K=5 RMSE = 2.4284 vs. random K=5 RMSE = 2.2784 (NN underperforms random in this test) | Honest negative result for the NN-prototype refinement; practical value of ProtoNet rests on the cold-start trajectory shape (converging toward, not matching, the full-data baseline), not on beating it outright. |
-| W6 | DM significance at n=34 may not survive multiple-comparison correction | Bonferroni + BH-FDR correction across 21 pairwise comparisons; Cohen's d | Raw: 2 significant pairs; BH-FDR: 0; Bonferroni: 0 | Materially weakens the H4b significance claim once corrected; reported transparently as a key limitation rather than omitted. |
-| W7 | Unclear theoretical (IS/DSS) contribution | CTR-quartile monotonicity test (Kendall τ); ROAS-uncertainty-by-impression-volume scarcity table | Conv-rate monotonicity: τ=0.0, p=1.0 (non-monotone); ROAS monotonicity: τ=0.667, p=0.333 (non-monotone, small n=4); peak ROAS std at <10 impressions (41,285) | The simple CTR-quartile signaling test does **not** confirm strict monotonicity — reported as a genuine null result, with the scarcity/zero-inflation-by-volume finding retained as the stronger empirical anchor for the cold-start framing. |
+| W1a | Augmentation method quality varies | KS/MMD stratification per augmentation method vs. real data | Moving-block bootstrap: highest fidelity, least novelty; β-VAE: most novel, least faithful; Gaussian copula: intermediate | Validates that the three-method pool balances fidelity against novelty; supports, does not replace, the FSD quality gate (main text §4.5 / methodology §4). |
+| W1b | Performance gains may be augmentation-driven, not data-driven | Data-scaling curve, 20–100% of real training data, 3 seeds | No clear monotonic RMSE improvement with more real data at this scale | Suggests current sample size has not yet reached a regime of strong returns to additional real data; scale-limited context, not a claim about augmentation necessity. |
+| W1c → **superseded by RQ6** | Hold-out RMSE may not reflect true cross-advertiser generalization | Originally: Leave-One-Ad-Group-Out CV within one advertiser. **Now:** Leave-One-Advertiser-Out CV across all 37 real advertisers (see RQ6 above) | RQ6: Mean RMSE = 1.2268 ± 0.5789, 95% CI [1.040, 1.413] | This concern is now addressed directly by RQ6 as a primary, not supplementary, result — the panel's 37 real advertisers make this a genuine cross-advertiser generalization test rather than a within-advertiser proxy. |
+| W2a | Single-month data may hide temporal instability | Hold-one-hour-block-out CV (4 blocks) | Moderate variability across blocks; smallest block (n=1) flagged as unstable and not over-interpreted | Scope condition on the one-month observation window (README §8.1), not a defect. |
+| W2b → **superseded by RQ6** | External validity beyond the advertisers in the dataset | Originally: synthetic multi-advertiser simulation (perturbing CTR/cost scale, ROAS noise) as a stand-in for real between-advertiser heterogeneity. **Now:** the panel already contains 37 real, distinct advertisers, and RQ6 tests generalization across them directly. | RQ6 (above) supersedes the need for a synthetic stand-in | The earlier synthetic simulation's negative result (poor transfer to out-of-distribution synthetic advertisers) is retained in the codebase for reference but is no longer load-bearing for the paper's external-validity claim, since RQ6 now provides real cross-advertiser evidence directly. |
+| W3 | Training curves show train/val divergence (possible overfitting) | Quantified best-val/train gap (see H4c); dropout × weight-decay grid search for GRU | Corroborates H4c's epoch-consistent domain-gap diagnostic; grid search provided for replication | Supports, and is now integral to, the H4c result rather than a separate supplementary check. |
+| W4 → **resolved by design change** | Attention attribution disagreed with the other 3 methods (measures a different axis) | Originally: 3-method consensus excluding Attention, computed as a supplementary check. **Now:** Attention is dropped from the explainability design entirely (see H5 above) | H5 now uses only Individual SHAP, Permutation SHAP, and Integrated Gradients from the start | Rather than retaining a structurally different fourth method and explaining away its disagreement after the fact, the design now uses only methods that estimate the same class of quantity (feature-level importance), consistent with Section 5.3/2.7 of the manuscript. |
+| W5 | ProtoNet K-shot RMSE far exceeds full-data baseline | Cold-start trajectory (K=1→21) vs. naive-mean baseline; NN-prototype vs. random selection | NN-prototype selection underperformed random selection in this test | Exploratory, honest negative result; ProtoNet's practical value (if any) rests on the cold-start trajectory shape, not on beating the full-data baseline. Not part of the core manuscript claims (see Exploratory Analyses above). |
+| W6 → **integral to H4b** | DM significance may not survive multiple-comparison correction | Bonferroni and BH-FDR correction across 21 pairwise comparisons | 13/18 significant raw; 8/18 significant after FDR correction (see H4b above) | This is no longer a separate caveat layered on top of a different headline number — the FDR-corrected 8/18 figure and the raw 13/18 figure are reported together as H4b's primary evidence. |
+| W7 | Unclear theoretical (IS/DSS) contribution | CTR-quartile monotonicity test; ROAS-uncertainty-by-impression-volume scarcity table | Mixed/non-monotone results at current sample sizes | Exploratory (see Exploratory Analyses above); not part of the submitted manuscript's claims. |
 
-## Summary Verdict Counts
+## Summary Verdict Counts (core hypothesis set only)
 
-| Verdict | Count | Hypotheses |
+| Verdict | Count | Items |
 |---|---|---|
-| ✓ Supported | 7 | H1, H3, H4b*, H4c, H5, H6, Bayesian/ProtoNet (novel) |
-| ⚬ Null / boundary condition | 1 | H4a |
-| △ Qualified (sign-pattern only) | 1 | H2 |
+| ✓ Supported | 8 | H1, H3, H4a, H4b, H4c, H5, R2 (corroborating), RQ6 |
+| △ Informative departure from hypothesized mechanism | 1 | H2 |
+| Robustness check, not independently verdicted | 1 | R1 |
 
-\* H4b's "supported" verdict is qualified by the W6 multiple-comparison
-correction, under which none of the pairwise DM comparisons remain
-significant after Bonferroni or BH-FDR adjustment. This caveat must be
-disclosed in any submission text alongside the headline RMSE ranking.
+No item in the core hypothesis set carries a "Null / boundary condition"
+verdict in the current design: the earlier draft's H4a null result was a
+consequence of testing the hypothesis in the reversed direction (Bayesian
+LSTM vs. logistic regression, rather than logistic regression vs. every
+recurrent architecture) on a different, smaller test split; the corrected
+H4a specification above is supported.
 
-## Target Journal Assessment
+## Manuscript Status
 
-| Journal | ABS Ranking | Estimated Outcome |
-|---|---|---|
-| Decision Support Systems (DSS) | 3 | Major Revision (primary target) |
-| Information & Software Technology (ISF) | 3 | Possible secondary target |
-
-These estimates reflect the overall manuscript state after incorporating
-all reviewer-anticipated weaknesses (W1–W7) and should be revisited once
-actual reviewer feedback is received.
+A complete manuscript (Abstract through References, ~37 pages) has been
+prepared incorporating all corrections above: the 37-advertiser panel
+framing, the Naver-and-Kakao (via SearchM Co., Ltd.) platform scope, the
+individual-level cross-verified explainability design, and the
+leave-one-advertiser-out external-validity check. The manuscript is
+written to maximize the strengths of the design (well-powered causal
+pillar, cross-advertiser generalization evidence, cross-verified
+explainability) while transparently reporting the scope conditions and
+power limitations of the sequence-level predictive tests (H4a–c), rather
+than being tailored to any single target journal's specific requirements.
+Journal-specific formatting (word limits, reference style, figure
+resolution) has not yet been applied and should be handled at submission
+time for the specific venue chosen.
