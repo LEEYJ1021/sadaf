@@ -14,15 +14,28 @@ Cold-start advertisement forecasting has been developed and validated almost exc
 
 ---
 
-## 📌 Version note (v5.3 → v6.0 — panel-scope and explainability-redesign edition)
+## 📌 Version note (v5.3 → v6.0 → v6.1 — panel-scope, explainability-redesign, and figure-consistency edition)
 
-This edition brings the README into alignment with the final submitted manuscript. It supersedes v5.3 with **three structural changes**, not just label corrections:
+This edition brings the README into alignment with the final submitted manuscript. v6.0 introduced **three structural changes**, not just label corrections; **v6.1** (this version) additionally regenerates the four figures below that had fallen out of sync with the v6.0 text, so every visual now matches the numbers it sits next to.
 
 | # | v5.3 state | v6.0 correction |
 |---|---|---|
 | 1 | **Single-advertiser framing.** README and manuscript both described "a single advertiser's Naver Search/Shopping campaigns," with n=24/37 read as ad-groups within one advertiser's account. | **Corrected to a 37-advertiser panel.** The n=24 test-set units and the 37 leave-one-out folds are 37 *distinct advertisers*, not 37 ad groups belonging to one advertiser. All causal-pillar estimates (H1: n=14,987; H3: n=9,069) are pooled across this same 37-advertiser panel. "Ad group" terminology is retained only where it refers to the actual ad-group × hour granularity of a row; every reference to sample composition now says "advertiser." |
 | 2 | **Naver-only platform framing.** Market-share motivation and campaign-composition statistics (§4.1, §4.4) were framed as "Naver vs. Google," and the dataset was described as Naver-only. | **Corrected to "Korea (Naver + Kakao) vs. Google."** The 89,675-row dataset itself mixes Naver and Kakao campaigns; SearchM Co., Ltd. is the certified agency that standardizes and provides this unified, cross-platform data. Naver's individual 63.8% share is retained as the platform-level figure motivating the boundary condition, but the comparison against Google is now framed at the domestic-platform level, consistent with the data's actual composition. |
 | 3 | **GS-SHAP (group-level Shapley) removed entirely.** The explainability pillar previously computed attribution jointly over two HSIC-defined feature groups (Group 0: engagement/spend; Group 1: temporal), a design whose added complexity is not conventionally warranted at this study's 7-feature dimensionality (Chamma, Thirion & Engemann, 2024). | **Replaced with individual-level, cross-verified attribution.** Three independent methods — Individual SHAP, Permutation SHAP, and Integrated Gradients — are computed on the identical model and data; cross-method convergence, not agreement within a single joint estimator, is now the evidentiary standard for H5. This also moved the explainability pillar's underlying sample from the sequence-level test split (n=24, clusters of 7–9) to the row-level paid/non-zero-ROAS sample (n=1,214 / 217 / 28 across three clusters), substantially improving the power available to H5 (§5.9). |
+
+### v6.1 — figure regeneration log (this update)
+
+Four figures had not been re-rendered after the v6.0 text corrections above and were still showing pre-redesign numbers, terminology, or captions. All four were regenerated from the corrected numbers and are embedded at their respective sections below.
+
+| Figure | What was wrong | What changed |
+|---|---|---|
+| **Fig. 1** — Campaign mix (§4.3) | Caption read "this advertiser, March 2025," a leftover from before the single-advertiser → 37-advertiser panel correction. | Caption corrected to "37-advertiser panel, March 2025." Underlying values (78.83% / 19.37% / 1.79% mix; 89.45% top-3-hour concentration) were unchanged — they were already panel-level aggregates. |
+| **Fig. 3** — Framework architecture (§3) | Explainability box still showed the pre-redesign, sequence-level H5 statistics ("Clusters n = 7, 8, 9"; "Rank corr. ρ = .56–.83"), contradicting Table 9/10. | Box updated to "Clusters n = 1,214 / 217 / 28 (row-level)," 3-method attribution (Individual SHAP + Permutation SHAP + Integrated Gradients), "Rank corr. ρ = .607–.964." |
+| **Fig. 9** — LOAO-CV (§5.8) | Used stale "LOGO-CV" / "37 ad groups" terminology and cross-referenced a superseded internal value ("README: 1.2427," "README: 0.6042"). | Terminology unified to "LOAO-CV" / "37 advertisers"; stale cross-reference annotations removed, leaving only the confirmed mean = 1.2268, SD = 0.5789. |
+| **Fig. 10** — Power summary (§5.9) | Reported a single, pre-redesign H5 row ("Kruskal-Wallis, n=24, 3 clusters, power=.53") and labeled Spearman clusters n=7/8/9 — the exact underpowered numbers the redesign was meant to fix. | Split into three row-level Kruskal-Wallis rows (n=1,459, power > .99 / > .99 / .93) matching Table 12, plus the corrected Spearman row (Cluster 2, n=28, ρ=0.607, power=.59). |
+
+A residual issue surfaced while regenerating Fig. 10 and is **flagged, not silently resolved**: Table 12 labels the weakest Spearman pair (ρ = 0.607) as belonging to "Cluster 2 (n=28)," while the §6.7/§6.10 narrative describes the same value as occurring "in the larger Cluster 0" (n=1,214). Fig. 10 follows Table 12's explicit row, since that is the structured source for a power-summary figure — but this table-vs-narrative cluster-label discrepancy should be reconciled directly in the manuscript text before submission (see the four before/after text edits already drafted for this: Table 12's row, the §6.10 paragraph, the Table 9 footnote, and the Figure 7 caption).
 
 Three files should be read together: this `README.md` (narrative, current design), `readme/README_v5_full.md` (captured pipeline stdout under the pre-redesign, group-level GS-SHAP pipeline — retained for provenance, not for current claims), and `sadaf/explainability/individual_attribution.py` (the script that produced the current H5 results).
 
@@ -108,8 +121,8 @@ Two supplementary robustness checks (Mamba's sequence-length sensitivity, R1; cr
 
 SADAF routes a single sparse, 37-advertiser-panel dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and explainability — which converge on an integrated, power-calibrated verdict (H1–H5), reported alongside two supplementary robustness checks (R1, R2) and an explicit external-validity boundary (RQ6).
 
-<p align="center"><img src="assets/sadaf_framework_architecture_v4.png" width="820" alt="SADAF framework architecture"></p>
-<p align="center"><em>Figure 1. SADAF framework architecture (v4). A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and explainability (H5) — which converge on an integrated, FDR-corrected, power-calibrated verdict. The △ symbol marks H2 as an informative departure from its originally hypothesized mediating mechanism (suppression rather than mediation; see §5.2), distinct from ✓ (supported as originally specified). R1, R2, and RQ6 (now leave-one-advertiser-out across 37 advertisers) are reported alongside the core verdict but are not independent headline hypotheses.</em></p>
+<p align="center"><img src="assets/fig3_framework_architecture.png" width="820" alt="SADAF framework architecture"></p>
+<p align="center"><em>Figure 1. SADAF framework architecture (v6.1, regenerated). A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and explainability (H5) — which converge on an integrated, FDR-corrected, power-calibrated verdict. The Explainability box now shows the corrected, row-level design: clusters n = 1,214 / 217 / 28, three-method attribution (Individual SHAP + Permutation SHAP + Integrated Gradients), rank correlation ρ = .607–.964 — matching Table 9/10 and §6.7 exactly. The △ symbol marks H2 as an informative departure from its originally hypothesized mediating mechanism (suppression rather than mediation; see §5.2), distinct from ✓ (supported as originally specified). R1, R2, and RQ6 (leave-one-advertiser-out across 37 advertisers) are reported alongside the core verdict but are not independent headline hypotheses.</em></p>
 
 <details>
 <summary>Text/Mermaid version of Figure 1</summary>
@@ -161,8 +174,8 @@ ROAS variance/mean overdispersion is 127,761 — several orders of magnitude bey
 
 ### 4.3 Campaign mix and market-concentration indicators (37-advertiser panel, descriptive only)
 
-<p align="center"><img src="assets/fig6_market_context.png" width="720" alt="Campaign-type mix and hourly spend concentration"></p>
-<p align="center"><em>Figure 2. Campaign-type mix and hourly concentration of paid spend across the 37-advertiser panel, March 2025.</em></p>
+<p align="center"><img src="assets/fig1_market_context.png" width="820" alt="Campaign-type mix and hourly spend concentration"></p>
+<p align="center"><em>Figure 2. Campaign-type mix and hourly concentration of paid spend across the 37-advertiser panel, March 2025 (v6.1, regenerated — caption corrected from "this advertiser" to "37-advertiser panel"; underlying values unchanged).</em></p>
 
 | Metric | Value |
 |---|---|
@@ -180,7 +193,7 @@ These figures describe this 37-advertiser panel's aggregate portfolio and schedu
 | Test | 24 |
 | **Total** | **222** |
 
-Drawn from the full **37-advertiser panel**. A SEQ_LEN = 6 variant, used only for the R1 robustness check (§5.5), yields 125 sequences. Splits are assigned at the advertiser/ad-group level — not the individual row or time step — to prevent information leakage across splits.
+Drawn from the full **37-advertiser panel**. A SEQ_LEN = 6 variant, used only for the R1 robustness check (§5.5), yields 125 sequences. Splits are assigned at the ad-group level — not the individual row or time step — to prevent information leakage across splits; the 24 test-set units are ad groups, not advertisers (37 advertisers is the count for the panel overall and for the LOAO-CV folds in §5.8, which is a separate, advertiser-level split).
 
 Because 174 real training sequences are insufficient to train recurrent architectures directly, the training split only is expanded via a three-stage augmentation pipeline (β-VAE + Gaussian copula + moving-block bootstrap), yielding ~870 augmented sequences, gated by the Fréchet Sequence Distance (FSD) diagnostic. **FSD = −0.047** (N=174→870), against an acceptance threshold of 2.0. Because this FSD implementation is a bias-corrected estimator, values at or near zero — including small negatives — indicate the strongest possible pass, not a violation of non-negativity. Validation and test sequences are never augmented.
 
@@ -283,7 +296,7 @@ Mamba is additionally evaluated at a six-step sequence length to test whether it
 Per-observation attributions for the five engagement/spend features (CTR, CVR, Depth, log_cost, log_impression — retained as "Group 0" purely as a reporting label, not a joint-estimator input) and the two temporal features (hour_sin, hour_cos — "Group 1") are summarized via a Gini coefficient, computed separately within each of three ad-group clusters (k-means on engagement/spend features).
 
 <p align="center"><img src="assets/fig7_individual_attribution_verification.png" width="880" alt="Individual-attribution verification"></p>
-<p align="center"><em>Figure 3. Individual-attribution verification. Top row: Gini-coefficient attribution concentration by cluster and method for Group 0 (engagement/spend) and Group 1 (temporal) features. Bottom-left: Kruskal-Wallis H statistics testing whether Group 0 attribution differs across clusters, computed separately for each of the three attribution methods. Bottom-right: Spearman rank correlation of feature-mean absolute attribution between each pair of methods, by cluster.</em></p>
+<p align="center"><em>Figure 3. Individual-attribution verification. Top row: Gini-coefficient attribution concentration by cluster and method for Group 0 (engagement/spend) and Group 1 (temporal) features, computed on each cluster's row-level sample (n = 1,214 / 217 / 28). Bottom-left: Kruskal-Wallis H statistics testing whether Group 0 attribution differs across clusters, computed separately for each of the three attribution methods on the same row-level samples. Bottom-right: Spearman rank correlation of feature-mean absolute attribution between each pair of methods, by cluster — this test compares rankings across the seven model features (n = 7 per cluster), not the row-level observations directly.</em></p>
 
 **Cluster sizes** (row-level observations underlying the Gini/Kruskal-Wallis/Spearman statistics below, not unique ad-group counts — the two differ because advertisers contribute unequal numbers of hourly paid, non-zero-ROAS observations):
 
@@ -322,7 +335,7 @@ All three independently computed methods agree that Group 0 attribution differs 
 
 **H5: supported.** Not only does Individual SHAP reject the null of equal attribution across clusters, but two independently computed corroborating methods (Permutation SHAP, Integrated Gradients) reach the identical qualitative conclusion.
 
-**Cross-method Spearman rank correlation (feature-mean |attribution|, per cluster):**
+**Cross-method Spearman rank correlation (feature-mean |attribution|, per cluster; test n = 7 features per cluster, see §4.4/Table 9 note):**
 
 ```
 -- Cluster 0 (n=1214) --
@@ -339,7 +352,9 @@ All three independently computed methods agree that Group 0 attribution differs 
    PermutationSHAP vs IntegratedGradients: rho = 0.893  (p = 0.0068)
 ```
 
-The two Shapley-family methods (Individual SHAP, Permutation SHAP) agree strongly and consistently across all three clusters (ρ = 0.857–0.964), an internal consistency check on the Shapley estimation itself, since both estimate the same underlying game-theoretic quantity via different sampling procedures. Agreement between the Shapley-family methods and the gradient-based Integrated Gradients is more variable — weaker in the largest cluster (ρ = 0.607–0.821 in Cluster 0) and stronger in the two smaller clusters (ρ = 0.714–0.893) — which is substantively informative rather than merely a precision artifact: Shapley-based and gradient-based methods rest on different formal definitions of feature importance (cooperative-game marginal contribution vs. integrated local gradient), so partial convergence between method families is the expected pattern. The more decision-relevant convergence result is that all three methods agree on *which feature category dominates*: Group 1 (temporal) attribution is consistently more concentrated than Group 0 (engagement) attribution across every method and every cluster (see Gini table above).
+The two Shapley-family methods (Individual SHAP, Permutation SHAP) agree strongly and consistently across all three clusters (ρ = 0.857–0.964), an internal consistency check on the Shapley estimation itself, since both estimate the same underlying game-theoretic quantity via different sampling procedures. Agreement between the Shapley-family methods and the gradient-based Integrated Gradients is more variable — weaker in Cluster 0 (ρ = 0.607–0.821) and stronger in Clusters 1 and 2 (ρ = 0.714–0.893) — which is substantively informative rather than merely a precision artifact: Shapley-based and gradient-based methods rest on different formal definitions of feature importance (cooperative-game marginal contribution vs. integrated local gradient), so partial convergence between method families is the expected pattern. The more decision-relevant convergence result is that all three methods agree on *which feature category dominates*: Group 1 (temporal) attribution is consistently more concentrated than Group 0 (engagement) attribution across every method and every cluster (see Gini table above).
+
+> **Note on the Spearman test's own sample size.** The Kruskal-Wallis and Gini statistics above are computed on each cluster's row-level sample (n = 1,214 / 217 / 28). The Spearman correlations are computed differently: for each cluster, the three methods' cluster-mean absolute attribution is first collapsed to one value per feature (seven features total), and the correlation is computed across those seven feature-level values — so the correlation test's own n is 7 in every cluster, regardless of row-level cluster size. This is why, for example, ρ = 0.607 in Cluster 0 carries p = .1482 despite Cluster 0 having 1,214 row-level observations: the correlation test itself only ever has 7 data points.
 
 This individual-level, cross-verified design directly answers the concern that originally motivated joint group-level attribution — that dependent features could be misleadingly attributed in isolation — by showing empirically, rather than assuming procedurally, that three independently computed methods converge on the same substantive conclusion at this feature dimensionality. As before, the leave-one-advertiser-out check (§5.8) remains the primary source of generalization evidence for the predictive pipeline that this explainability analysis interprets.
 
@@ -374,7 +389,8 @@ The gain is modest; the contribution of this analysis is the empirical motivatio
 
 **Leave-one-advertiser-out cross-validation** executed across all **37 advertisers** in the panel, GRU forecaster (hidden=128, layers=2, dropout=0.2), all 37 real per-fold RMSE values retained:
 
-<p align="center"><img src="assets/fig9_loao_cv_real.png" width="680" alt="LOAO-CV, 37 real fold RMSE values"></p>
+<p align="center"><img src="assets/fig9_loao_cv.png" width="820" alt="LOAO-CV, 37 real fold RMSE values"></p>
+<p align="center"><em>Figure 4. Leave-one-advertiser-out cross-validation, 37 real per-fold RMSE values (v6.1, regenerated — terminology unified to "LOAO-CV" / "37 advertisers," stale internal cross-reference annotations to superseded README values removed).</em></p>
 
 | Quantity | Value |
 |---|---|
@@ -395,7 +411,8 @@ These checks support cross-advertiser generalization **within** this single-mark
 
 Sample sizes range from the thousands (causal pillar, pooled across 37 advertisers) to n = 24 test sequences (H4a–c) and row-level cluster sizes of 28–1,214 (H5). This section summarizes what each can and cannot support.
 
-<p align="center"><img src="assets/fig10_power_summary.png" width="720" alt="Statistical power by hypothesis and diagnostic test"></p>
+<p align="center"><img src="assets/fig10_power_summary.png" width="820" alt="Statistical power by hypothesis and diagnostic test"></p>
+<p align="center"><em>Figure 5. Statistical power by hypothesis and diagnostic test (v6.1, regenerated — H5 now shows three separate row-level Kruskal-Wallis bars matching Table 12, replacing the single pre-redesign n=24 bar; Spearman row corrected to the Table 12 entry).</em></p>
 
 | Test | n | Effect | Power (or MDE) | Type |
 |---|---|---|---|---|
@@ -406,7 +423,7 @@ Sample sizes range from the thousands (causal pillar, pooled across 37 advertise
 | H5 Kruskal–Wallis, Individual SHAP (G0) | 1,459 (3 clusters) | H = 72.21, p<.0001 | Power > .99 | Post-hoc |
 | H5 Kruskal–Wallis, Permutation SHAP (G0) | 1,459 (3 clusters) | H = 143.83, p<.0001 | Power > .99 | Post-hoc |
 | H5 Kruskal–Wallis, Integrated Gradients (G0) | 1,459 (3 clusters) | H = 18.28, p=.0001 | Power = .93 | Post-hoc |
-| H5 Spearman, weakest pair (Cluster 0, n=1,214) | 1,214 | ρ = 0.607 (Ind.SHAP vs IG) | Power = .59 (context-dependent; see note) | Post-hoc — interpret with caution |
+| H5 Spearman, weakest pair (Cluster 0, n=1,214 row-level; test n=7 features) | 7 | ρ = 0.607 (Ind.SHAP vs IG) | Power = .59 | Post-hoc — interpret with caution |
 | RQ6 LOAO-CV mean RMSE | 37 folds | RMSE = 1.227 ± 0.579 | 95% CI half-width = 0.187 (15.3% of mean) | A priori (Precision) |
 
 **Reading rule used throughout this README:** the causal pillar (H1, H3) and the LOAO-CV precision check (RQ6) rest on genuinely high a priori power and are the paper's best-powered, independent evidence. H4b and H4c draw on the same n = 24 test sequences, so they are read as multiple analytical lenses on one shared evidentiary base rather than as independent confirmations. **H5, by moving from a sequence-level, cluster-of-7-to-9 design to the row-level sample (n = 1,214 / 217 / 28), now carries materially more power than the original group-level design** — two of the three Kruskal-Wallis tests exceed 0.99 power, and even the weakest (Integrated Gradients) reaches .93. Post-hoc power figures are not treated as independently corroborating evidence, since they are a deterministic function of the same p-values already reported.
@@ -420,7 +437,7 @@ Read together, the pattern of support across H1–H5, R1–R2, and RQ6 sketches 
 - **Where it agrees, with high power:** CTR causally drives conversion (H1) and the CTR→ROAS relationship is stronger for Search than Shopping traffic (H3), both estimated at n in the thousands (pooled across all 37 advertisers) with power > .99 — a genuine, design-level property, not an artifact of the observed effect sizes.
 - **Where it complicates the standard account, at smaller sample sizes:** browsing depth behaves as a negative suppressor rather than the positive mediator H2 anticipated — reported as a departure from, not confirmation of, H2's original mechanism. A parsimonious logistic classifier also outperforms every recurrent architecture on the antecedent classification task (H4a): at this sample size, added representational capacity is actively detrimental, not merely unnecessary.
 - **Where scarcity itself is the finding:** the two-stage design exists because 174 real training sequences cannot fit a deep sequence model directly. The epoch-consistent domain-gap diagnostic (H4c) identifies Mamba — not Bayesian LSTM — as the architecture showing the classical overfitting signature, despite its comparatively weak raw accuracy; Bayesian LSTM's large train-above-validation gap is more plausibly MC-dropout inflating training loss than genuine overfitting.
-- **On the explainability pillar specifically:** moving from a joint group-level estimator to three independently computed, individual-level methods produced a more, not less, informative result. Rather than a single test whose interpretability at seven features was itself contested, the analysis reports three methodologically distinct tests that independently converge on the same qualitative conclusion — engagement/spend attribution differs across ad-group clusters, and temporal attribution is consistently more concentrated than engagement attribution, across every method and every cluster. Where the methods partially diverge (Shapley-family vs. Integrated Gradients, largest cluster), that divergence is itself informative about which formal definition of feature importance is driving a given conclusion — a distinction a single joint estimator would have obscured by construction.
+- **On the explainability pillar specifically:** moving from a joint group-level estimator to three independently computed, individual-level methods produced a more, not less, informative result. Rather than a single test whose interpretability at seven features was itself contested, the analysis reports three methodologically distinct tests that independently converge on the same qualitative conclusion — engagement/spend attribution differs across ad-group clusters, and temporal attribution is consistently more concentrated than engagement attribution, across every method and every cluster. Where the methods partially diverge (Shapley-family vs. Integrated Gradients, Cluster 0), that divergence is itself informative about which formal definition of feature importance is driving a given conclusion — a distinction a single joint estimator would have obscured by construction.
 - **On RQ6:** the LOAO-CV forecaster (GRU) and the headline regression winner (LSTM) are different architectures, so their RMSE proximity (1.2268 vs. 1.2099) is suggestive of a stable task-level RMSE range, not a replication of the H4b result under resampling. Because each fold withholds an entire advertiser, RQ6 provides direct evidence of generalization to advertisers unseen during training — its primary contribution is this precision estimate (95% CI = [1.040, 1.413]).
 
 None of this establishes that Korean, domestically dominated, or multi-platform-but-non-Google-dominated markets behave categorically differently from Google-dominated ones — the sample is a 37-advertiser panel, one month, one agency-standardized platform (Naver + Kakao), by explicit design. What it establishes is that the causal pillar's findings (H1, H3) rest on genuinely high a priori power, the LOAO-CV precision check (RQ6) provides an independent, reasonably tight confirmation of cross-advertiser generalization within scope, the explainability pillar (H5) now rests on a considerably larger and independently cross-verified evidentiary base than a single joint estimator would have provided, and the remaining sequence-level findings (H2, H4a, H4b, H4c) — evaluated at n = 24 and substantially overlapping in evidentiary base — are reported with the descriptive and scope-limited status their design warrants.
@@ -436,6 +453,8 @@ None of this establishes that Korean, domestically dominated, or multi-platform-
 | **Naver-only platform framing** | Earlier drafts framed market share and campaign composition as "Naver vs. Google" only. | **Resolved in v6.0** — reframed as "Korea (Naver + Kakao) vs. Google," consistent with the dataset's actual cross-platform composition via SearchM. |
 | **GS-SHAP (group-level Shapley)** | Earlier drafts computed attribution jointly over two HSIC-defined feature groups, a design whose complexity is not conventionally warranted at 7-feature dimensionality. | **Resolved in v6.0** — replaced with individual-level, cross-verified attribution (Individual SHAP, Permutation SHAP, Integrated Gradients); §5.6 fully rewritten with actual recomputed results. |
 | **H2 mechanism mislabel** | Previously reported as "supported" in a way that implied the hypothesized *mediation* mechanism was confirmed. | Resolved (carried over from v5.3) — §5.2 verdict and explanation reflect suppression, not mediation. |
+| **Figures out of sync with v6.0 text (Figs. 1, 3, 9, 10)** | Fig. 1's caption still said "this advertiser"; Fig. 3's explainability box still showed pre-redesign sequence-level H5 stats (n=7/8/9, ρ=.56–.83); Fig. 9 used stale "LOGO-CV"/"37 ad groups" wording and cross-referenced a superseded README value; Fig. 10 still reported the single, pre-redesign, underpowered H5 test the redesign was meant to fix. | **Resolved in v6.1** — all four regenerated from corrected numbers/terminology; see version-note table above. |
+| **Table 12 vs. §6.7/§6.10 cluster-label mismatch for ρ=0.607** | Table 12 attributes the weakest Spearman pair to "Cluster 2 (n=28)"; §6.7/§6.10 narrative attributes the same value to "Cluster 0 (n=1,214)." | **Open** — flagged during Fig. 10 regeneration; four before/after text edits are drafted (Table 12 row, §6.10 paragraph, Table 9 footnote, Figure 7 caption) but not yet applied to the manuscript. |
 | **FSD seed coverage** | The Gaussian-copula and moving-block-bootstrap augmentation modules do not accept an explicit `seed` parameter, so FSD is not exactly bit-for-bit reproducible across runs (though it consistently passes the <2.0 threshold). | Open — recommended follow-up |
 | **Underpowered H5 Spearman correlations in small clusters** | Cross-method agreement in Cluster 2 (n=28 row-level observations, 13 advertisers) is more variable than in the two larger clusters. | Reported explicitly in §5.6 and §5.9; treated as directional, not decisive |
 | **Agency-managed data provenance** | Dataset sourced through SearchM Co., Ltd. rather than advertisers' in-house teams; standardizes conventions across Naver and Kakao but may not generalize to in-house-managed or single-platform data. | Explicit scope condition |
@@ -447,56 +466,59 @@ None of this establishes that Korean, domestically dominated, or multi-platform-
 ```
 sadaf/
 ├── assets/
-│   ├── sadaf_framework_architecture_v4.png       # Figure 1 (v4) — framework architecture, H1–H5 + R1/R2/RQ6 (37 advertisers)
-│   ├── fig6_market_context.png                   # Figure 2 — campaign mix & spend concentration, 37-advertiser panel
+│   ├── fig3_framework_architecture.png            # Figure 1 (v6.1, regenerated) — framework architecture, corrected H5 box
+│   ├── fig1_market_context.png                    # Figure 2 (v6.1, regenerated) — campaign mix & spend concentration, corrected caption
 │   ├── fig1_regression_comparison.png
 │   ├── fig3_dm_heatmap.png
 │   ├── fig5_ks_domain_shift.png
-│   ├── fig6_domain_gap_corrected.png              # epoch-consistent domain gap (H4c)
-│   ├── fig7_individual_attribution_verification.png  # Figure 3 (v6.0, NEW) — replaces old GS-SHAP fig4_gsshap_gini.png
-│   ├── fig9_loao_cv_real.png                      # leave-one-advertiser-out, 37 real fold RMSE
-│   └── fig10_power_summary.png
+│   ├── fig6_domain_gap_corrected.png               # epoch-consistent domain gap (H4c)
+│   ├── fig7_individual_attribution_verification.png  # Figure 3 (v6.0) — replaces old GS-SHAP fig4_gsshap_gini.png
+│   ├── fig9_loao_cv.png                            # Figure 4 (v6.1, regenerated) — LOAO-CV, terminology + stale annotations fixed
+│   └── fig10_power_summary.png                     # Figure 5 (v6.1, regenerated) — row-level H5 power, matches Table 12
 ├── data/
 │   └── README_data.md
 ├── docs/
 │   ├── methodology.md
 │   └── results_table.md
-├── figures/                                       # Auto-generated pipeline outputs
-│   ├── logo_cv_fold_rmse.csv                      # 37-row per-advertiser LOAO-CV RMSE, source data for Figure "fig9"
-│   ├── cluster_sizes.csv                           # NEW — Table 9 (unique ad-group / row-level n by cluster)
-│   ├── gini_by_cluster_method.csv                  # NEW — Table 10 (Gini by cluster/method/group)
-│   ├── kruskal_wallis_group0.csv                   # NEW — H5 Kruskal-Wallis by method
-│   └── spearman_agreement.csv                      # NEW — cross-method Spearman by cluster
+├── figures/                                        # Auto-generated pipeline outputs
+│   ├── logo_cv_fold_rmse.csv                       # 37-row per-advertiser LOAO-CV RMSE, source data for Figure 4
+│   ├── cluster_sizes.csv                            # Table 9 (unique ad-group / row-level n by cluster)
+│   ├── gini_by_cluster_method.csv                   # Table 10 (Gini by cluster/method/group)
+│   ├── kruskal_wallis_group0.csv                    # H5 Kruskal-Wallis by method
+│   └── spearman_agreement.csv                       # cross-method Spearman by cluster
 ├── patches/
-│   ├── sadaf_diagram_v4.py                         # regenerates Figure 1 (framework architecture)
-│   ├── make_fig7_individual_attribution.py         # NEW — regenerates Figure 3 from the 4 CSVs above
-│   ├── trainer_domain_gap_report_PATCH.py          # epoch-consistent domain_gap_report()
-│   └── loao_cv_save_patch.py                       # persist per-advertiser LOAO-CV RMSE
+│   ├── fig3_framework_architecture.py               # regenerates Figure 1 (v6.1 — corrected H5 box)
+│   ├── fig1_market_context.py                       # regenerates Figure 2 (v6.1 — corrected caption)
+│   ├── fig9_loao_cv.py                              # regenerates Figure 4 (v6.1 — corrected terminology/annotations)
+│   ├── fig10_power_summary.py                       # regenerates Figure 5 (v6.1 — row-level H5 power rows)
+│   ├── make_fig7_individual_attribution.py          # regenerates Figure 3 from the 4 CSVs above
+│   ├── trainer_domain_gap_report_PATCH.py           # epoch-consistent domain_gap_report()
+│   └── loao_cv_save_patch.py                        # persist per-advertiser LOAO-CV RMSE
 ├── readme/
-│   └── README_v5_full.md                           # captured pipeline stdout under the pre-redesign (GS-SHAP) pipeline
+│   └── README_v5_full.md                            # captured pipeline stdout under the pre-redesign (GS-SHAP) pipeline
 ├── sadaf/
 │   ├── augmentation/
-│   │   ├── copula.py                               # no explicit seed param yet (see §7)
-│   │   ├── mbb.py                                  # no explicit seed param yet (see §7)
+│   │   ├── copula.py                                # no explicit seed param yet (see §7)
+│   │   ├── mbb.py                                   # no explicit seed param yet (see §7)
 │   │   ├── pipeline.py
 │   │   └── vae.py
 │   ├── causal/
-│   │   ├── mediation.py                            # run_mediation()
-│   │   ├── moderation.py                           # run_moderation()
-│   │   └── psm.py                                  # run_psm_ipw()
+│   │   ├── mediation.py                             # run_mediation()
+│   │   ├── moderation.py                            # run_moderation()
+│   │   └── psm.py                                   # run_psm_ipw()
 │   ├── data/
 │   │   ├── loader.py
 │   │   └── sequence.py
 │   ├── explainability/
-│   │   └── individual_attribution.py               # NEW — replaces gsshap.py; Individual SHAP + Permutation SHAP + Integrated Gradients
+│   │   └── individual_attribution.py                # replaces gsshap.py; Individual SHAP + Permutation SHAP + Integrated Gradients
 │   ├── models/
 │   │   ├── attention.py
-│   │   ├── gru.py                                  # exact architecture used for LOAO-CV, hidden=128/layers=2/dropout=0.2
+│   │   ├── gru.py                                   # exact architecture used for LOAO-CV, hidden=128/layers=2/dropout=0.2
 │   │   ├── lstm.py
 │   │   ├── mamba.py
 │   │   └── protonet.py
 │   ├── training/
-│   │   └── trainer.py                              # train_model, eval_reg, diebold_mariano, domain_gap_report()
+│   │   └── trainer.py                               # train_model, eval_reg, diebold_mariano, domain_gap_report()
 │   └── config.py
 ├── scripts/
 │   ├── 01_eda.py
@@ -505,17 +527,18 @@ sadaf/
 │   ├── 04_augmentation.py
 │   ├── 05_prediction.py
 │   ├── 06_uncertainty.py
-│   ├── 07_explainability.py                        # UPDATED — now calls sadaf/explainability/individual_attribution.py
+│   ├── 07_explainability.py                         # calls sadaf/explainability/individual_attribution.py
 │   ├── 08_domain_adaptation.py
-│   ├── 09_robustness.py                            # UPDATED — leave-one-advertiser-out (was leave-one-ad-group-out)
+│   ├── 09_robustness.py                             # leave-one-advertiser-out (was leave-one-ad-group-out)
 │   └── 10_figures.py
 ├── tests/
 ├── LICENSE
-├── README.md                                       # This file
+├── README.md                                        # This file
 └── requirements.txt
 ```
 
-> **Removed in v6.0:** `sadaf/explainability/gsshap.py` (group-level, HSIC-grouped Shapley estimator) and `assets/fig4_gsshap_gini.png`. If your local checkout still references either, update to `individual_attribution.py` and `fig7_individual_attribution_verification.png` respectively — `docs/results_table.md` and any file restating H5's method or verdict should be re-synced to this README.
+> **Removed in v6.0:** `sadaf/explainability/gsshap.py` (group-level, HSIC-grouped Shapley estimator) and `assets/fig4_gsshap_gini.png`. If your local checkout still references either, update to `individual_attribution.py` and `fig7_individual_attribution_verification.png` respectively.
+> **Renamed/regenerated in v6.1:** `assets/sadaf_framework_architecture_v4.png` → `assets/fig3_framework_architecture.png`; `assets/fig6_market_context.png` → `assets/fig1_market_context.png`; `assets/fig9_loao_cv_real.png` → `assets/fig9_loao_cv.png`. `docs/results_table.md` and any file restating H5's method or verdict should be re-synced to this README.
 
 ---
 
@@ -543,7 +566,12 @@ python -m sadaf.explainability.individual_attribution \
 python scripts/08_domain_adaptation.py
 python scripts/09_robustness.py          # leave-one-advertiser-out CV across 37 advertisers
 python scripts/10_figures.py
-python patches/sadaf_diagram_v4.py
+
+# Regenerate the four v6.1 figures individually (each writes to assets/):
+python patches/fig3_framework_architecture.py
+python patches/fig1_market_context.py
+python patches/fig9_loao_cv.py
+python patches/fig10_power_summary.py
 python patches/make_fig7_individual_attribution.py \
     --gini figures/gini_by_cluster_method.csv \
     --kw figures/kruskal_wallis_group0.csv \
@@ -559,6 +587,10 @@ python patches/make_fig7_individual_attribution.py \
 - **FIX-26 (v6.0):** Removed `sadaf/explainability/gsshap.py`; added `sadaf/explainability/individual_attribution.py` computing Individual SHAP, Permutation SHAP, and Integrated Gradients on the identical model/data, with cross-method Kruskal-Wallis and Spearman verification.
 - **FIX-27 (v6.0):** `scripts/09_robustness.py` LOAO-CV loop changed from grouping by ad-group identifier within a single advertiser to grouping by advertiser identifier across the full 37-advertiser panel; `patches/loao_cv_save_patch.py` updated accordingly.
 - **FIX-28 (v6.0):** All narrative references to "single advertiser" and "Naver-only" corrected throughout README, docstrings, and figure captions to "37-advertiser panel" and "Naver and Kakao (via SearchM Co., Ltd.)," respectively. No pipeline numerical outputs changed as a result of this fix — it is a documentation/labeling correction, consistent with how the underlying data was always structured.
+- **FIX-29 (v6.1):** Regenerated `assets/fig1_market_context.png` — caption corrected from "this advertiser, March 2025" to "37-advertiser panel, March 2025"; underlying values unchanged (already panel-level aggregates).
+- **FIX-30 (v6.1):** Regenerated `assets/fig3_framework_architecture.png` — Explainability box updated from pre-redesign sequence-level stats (clusters n=7/8/9, ρ=.56–.83) to the corrected row-level design (clusters n=1,214/217/28, ρ=.607–.964, 3-method attribution), matching Table 9/10 and §6.7.
+- **FIX-31 (v6.1):** Regenerated `assets/fig9_loao_cv.png` — "LOGO-CV"/"37 ad groups" terminology corrected to "LOAO-CV"/"37 advertisers"; stale cross-reference annotations to a superseded internal README value ("1.2427," "0.6042") removed, leaving only the confirmed Table 11 values (mean=1.2268, SD=0.5789).
+- **FIX-32 (v6.1):** Regenerated `assets/fig10_power_summary.png` — replaced the single pre-redesign H5 bar (n=24, 3 clusters, power=.53) with three row-level Kruskal-Wallis bars matching Table 12 (n=1,459, power > .99/> .99/.93); Spearman bar corrected to Table 12's Cluster 2 (n=28) entry. A residual Table 12 vs. §6.7/§6.10 cluster-label discrepancy for this same ρ=0.607 value was surfaced in the process and is tracked in §7 as an open item, not silently resolved by the figure.
 
 ---
 
