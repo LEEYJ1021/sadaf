@@ -10,40 +10,68 @@
 
 ## Abstract
 
-Cold-start advertisement forecasting has been developed and validated almost exclusively on markets where a single platform commands over 90% of search volume. This repository documents **SADAF** (Sparse Ad-data Augmentation Framework), which integrates (i) doubly robust causal estimation of the click-through-to-conversion pathway, (ii) a two-stage Bayesian sequential deep-learning pipeline with generative data augmentation for return-on-ad-spend (ROAS) forecasting under extreme sparsity, and (iii) **individual-level attribution, cross-verified across three independent methods** — tested against a market structure that looks nothing like the Google-dominated default. In March 2025, domestic Korean platforms collectively held a majority of Korean search volume (Naver alone at 63.8%) against Google's 28.7%. Using 89,675 hourly ad-group records from a **37-advertiser panel's** Search/Shopping campaigns across Naver and Kakao (standardized and provided by SearchM Co., Ltd., an official Naver/Kakao advertising agency), we find that (1) above-median-CTR ads causally increase conversion (doubly robust IPW-ATT = 0.129); (2) browsing depth acts as a **negative statistical suppressor**, not a mediator, between CTR and conversion — an informative departure from the mediation mechanism originally hypothesized, reported as such rather than as confirmation; (3) a parsimonious logistic classifier matches or exceeds every recurrent architecture on the antecedent conversion-classification task under extreme sequence scarcity (n = 174); (4) an augmented LSTM is the best ROAS forecaster, and an epoch-consistent domain-gap diagnostic identifies Mamba — not Bayesian LSTM — as the only architecture showing a classical overfitting signature; and (5) three independently computed attribution methods (Individual SHAP, Permutation SHAP, Integrated Gradients) converge on the same conclusion — engagement/spend attribution differs significantly across ad-group clusters (all three methods p < .001), and temporal attribution is consistently more concentrated than engagement attribution across every method and every cluster. Every hypothesis test is paired with an explicit statistical-power or minimum-detectable-effect assessment, since power — not just significance — determines how much a given result can support.
+Cold-start advertising forecasting, which estimates advertising performance from
+limited early-stage campaign observations, has been developed almost exclusively in
+Google-dominated search markets, leaving open whether its causal, predictive, and
+explainability findings generalize to structurally different platform ecosystems.
+Using 89,675 hourly ad-group records from 37 Korean advertisers across Naver and
+Kakao, we develop the **Sparse Ad Data Augmentation Framework (SADAF)**, integrating
+doubly robust causal inference, Bayesian sequential forecasting, and cross-verified
+explainable attribution. Click-through rate exhibits a positive causal effect on
+conversion (ATT = 0.129), whereas browsing depth functions as a statistical suppressor
+rather than the hypothesized mediator. Although a single-split evaluation favored an
+augmented LSTM, **five-seed replication showed this advantage to be split-dependent**:
+a Bayesian LSTM achieved the most stable forecasting performance, while data
+augmentation primarily mitigated overfitting rather than consistently improving
+predictive accuracy. Leave-one-advertiser-out cross-validation across all 37
+advertisers corroborated the overall forecasting error range (RMSE = 1.227 ± 0.579;
+95% CI [1.040, 1.413]). These findings extend cold-start advertising evidence beyond
+Google-centered markets and highlight the importance of replication-aware evaluation
+and power-calibrated inference for reliable forecasting under severe data scarcity.
+
+**Keywords:** Cold start advertising forecasting; Causal inference; Bayesian deep
+learning; Explainable AI; Market concentration; Statistical power
 
 ---
 
-## 📌 Version note (v5.3 → v6.0 → v6.1 — panel-scope, explainability-redesign, and figure-consistency edition)
+## 📌 Version note (v6.1 → v7.0 — replication-aware revision)
 
-This edition brings the README into alignment with the final submitted manuscript. v6.0 introduced **three structural changes**, not just label corrections; **v6.1** (this version) additionally regenerates the four figures below that had fallen out of sync with the v6.0 text, so every visual now matches the numbers it sits next to.
+This edition incorporates a full round of reviewer feedback and, in response to it,
+adds three new empirical analyses that were not part of earlier versions: a **five-seed
+replication** of the regression-stage architecture comparison, a **real-only vs.
+augmented ablation** isolating what the augmentation pipeline actually contributes, and
+a **Shopping-only baseline** decomposing the domain-adaptation result. These are not
+wording changes — they revise the paper's headline predictive claim.
 
-| # | v5.3 state | v6.0 correction |
+| Area | v6.1 state | v7.0 change |
 |---|---|---|
-| 1 | **Single-advertiser framing.** README and manuscript both described "a single advertiser's Naver Search/Shopping campaigns," with n=24/37 read as ad-groups within one advertiser's account. | **Corrected to a 37-advertiser panel.** The n=24 test-set units and the 37 leave-one-out folds are 37 *distinct advertisers*, not 37 ad groups belonging to one advertiser. All causal-pillar estimates (H1: n=14,987; H3: n=9,069) are pooled across this same 37-advertiser panel. "Ad group" terminology is retained only where it refers to the actual ad-group × hour granularity of a row; every reference to sample composition now says "advertiser." |
-| 2 | **Naver-only platform framing.** Market-share motivation and campaign-composition statistics (§4.1, §4.4) were framed as "Naver vs. Google," and the dataset was described as Naver-only. | **Corrected to "Korea (Naver + Kakao) vs. Google."** The 89,675-row dataset itself mixes Naver and Kakao campaigns; SearchM Co., Ltd. is the certified agency that standardizes and provides this unified, cross-platform data. Naver's individual 63.8% share is retained as the platform-level figure motivating the boundary condition, but the comparison against Google is now framed at the domestic-platform level, consistent with the data's actual composition. |
-| 3 | **GS-SHAP (group-level Shapley) removed entirely.** The explainability pillar previously computed attribution jointly over two HSIC-defined feature groups (Group 0: engagement/spend; Group 1: temporal), a design whose added complexity is not conventionally warranted at this study's 7-feature dimensionality (Chamma, Thirion & Engemann, 2024). | **Replaced with individual-level, cross-verified attribution.** Three independent methods — Individual SHAP, Permutation SHAP, and Integrated Gradients — are computed on the identical model and data; cross-method convergence, not agreement within a single joint estimator, is now the evidentiary standard for H5. This also moved the explainability pillar's underlying sample from the sequence-level test split (n=24, clusters of 7–9) to the row-level paid/non-zero-ROAS sample (n=1,214 / 217 / 28 across three clusters), substantially improving the power available to H5 (§5.9). |
+| **Regression-stage "best model" claim (H4b)** | A single train/validation/test split (Seed 42) reported LSTM as the outright best forecaster (RMSE = 1.2099). | **Revised.** Five-seed replication shows this ranking is split-dependent: LSTM ranks #1 in only 1 of 5 seeds. **Bayesian LSTM** has the lowest five-seed mean RMSE and the smallest cross-seed SD. H4b is now read as *partially supported*: recurrent/gated architectures beat linear and feed-forward baselines (holds), but "LSTM specifically is best" does not replicate. See `replication_extension/`. |
+| **Augmentation pipeline's role** | Presented primarily as an accuracy-improving step validated by the Fréchet Sequence Distance (FSD) quality gate. | **Revised.** A real-only-trained control condition shows augmentation slightly *increases* RMSE for 6 of 7 architectures; its one clear, statistically distinguishable benefit is preventing catastrophic overfitting in the MLP baseline. Reframed as primarily a **regularizer for overfitting-prone architectures**, not a general accuracy improver. |
+| **H4c (overfitting hypothesis)** | Phrased as a directional hypothesis ("at least one model will show validation loss exceeding training loss"), which reviewers flagged as reverse-engineered from the result. | **Reclassified as R3**, a descriptive robustness diagnostic rather than a falsifiable hypothesis. The result itself (Mamba alone shows the classical overfitting signature) is unchanged. |
+| **Domain adaptation (R2 / Section 6.8)** | Reported naive vs. adapted Search→Shopping transfer RMSE with no baseline isolating genuine domain shift from Shopping's intrinsic forecasting difficulty. | **Extended.** A new Shopping-only baseline (trained and evaluated entirely within Shopping campaigns) shows the "recoverable" domain-shift gap is small (~0.005 RMSE) and the adaptation recipe already captures nearly all of it — the naive transfer's error is mostly intrinsic Shopping-forecasting difficulty, not recoverable domain shift. |
+| **RQ6 vs. "H6" numbering** | Some readers read the leave-one-advertiser-out check as a mislabeled sixth hypothesis. | Clarified explicitly: RQ6 is a scope question evaluated descriptively, not a sixth directional, falsifiable hypothesis in the H-series. |
+| **Mediation effect reporting (H2)** | Only the indirect effect (a × b) was reported. | **Extended.** A second panel reports the probability-scale direct, total, and indirect effects (average marginal effects), alongside the original coefficient-product decomposition, with an explicit note that the two panels use different scales and should not be summed. |
+| **Elasticity interpretation (H3)** | Risked being read as "Shopping campaigns see a 68% ROAS lift from CTR increases." | Reworded to state the Search vs. Shopping elasticity estimates (0.949 vs. 0.563) directly, without the aggregate percentage framing. |
+| **Figures (Fig. 1/3/4/5 in this README)** | Framework-architecture figure showed the pre-revision H4b/H4c framing; no figure existed for the five-seed replication or the full DM heatmap. | **Regenerated / added.** `fig3_framework_architecture.png` now marks H4b with △ (informative departure — split-dependent) rather than ✓; two new figures, `fig4_regression_fiveseed.png` and `fig5_dm_heatmap.png`, visualize the five-seed distribution and the complete 21-pair Diebold–Mariano heatmap (raw + BH-FDR), respectively. |
 
-### v6.1 — figure regeneration log (this update)
-
-Four figures had not been re-rendered after the v6.0 text corrections above and were still showing pre-redesign numbers, terminology, or captions. All four were regenerated from the corrected numbers and are embedded at their respective sections below.
-
-| Figure | What was wrong | What changed |
-|---|---|---|
-| **Fig. 1** — Campaign mix (§4.3) | Caption read "this advertiser, March 2025," a leftover from before the single-advertiser → 37-advertiser panel correction. | Caption corrected to "37-advertiser panel, March 2025." Underlying values (78.83% / 19.37% / 1.79% mix; 89.45% top-3-hour concentration) were unchanged — they were already panel-level aggregates. |
-| **Fig. 3** — Framework architecture (§3) | Explainability box still showed the pre-redesign, sequence-level H5 statistics ("Clusters n = 7, 8, 9"; "Rank corr. ρ = .56–.83"), contradicting Table 9/10. | Box updated to "Clusters n = 1,214 / 217 / 28 (row-level)," 3-method attribution (Individual SHAP + Permutation SHAP + Integrated Gradients), "Rank corr. ρ = .607–.964." |
-| **Fig. 9** — LOAO-CV (§5.8) | Used stale "LOGO-CV" / "37 ad groups" terminology and cross-referenced a superseded internal value ("README: 1.2427," "README: 0.6042"). | Terminology unified to "LOAO-CV" / "37 advertisers"; stale cross-reference annotations removed, leaving only the confirmed mean = 1.2268, SD = 0.5789. |
-| **Fig. 10** — Power summary (§5.9) | Reported a single, pre-redesign H5 row ("Kruskal-Wallis, n=24, 3 clusters, power=.53") and labeled Spearman clusters n=7/8/9 — the exact underpowered numbers the redesign was meant to fix. | Split into three row-level Kruskal-Wallis rows (n=1,459, power > .99 / > .99 / .93) matching Table 12, plus the corrected Spearman row (Cluster 2, n=28, ρ=0.607, power=.59). |
-
-A residual issue surfaced while regenerating Fig. 10 and is **flagged, not silently resolved**: Table 12 labels the weakest Spearman pair (ρ = 0.607) as belonging to "Cluster 2 (n=28)," while the §6.7/§6.10 narrative describes the same value as occurring "in the larger Cluster 0" (n=1,214). Fig. 10 follows Table 12's explicit row, since that is the structured source for a power-summary figure — but this table-vs-narrative cluster-label discrepancy should be reconciled directly in the manuscript text before submission (see the four before/after text edits already drafted for this: Table 12's row, the §6.10 paragraph, the Table 9 footnote, and the Figure 7 caption).
-
-Three files should be read together: this `README.md` (narrative, current design), `readme/README_v5_full.md` (captured pipeline stdout under the pre-redesign, group-level GS-SHAP pipeline — retained for provenance, not for current claims), and `sadaf/explainability/individual_attribution.py` (the script that produced the current H5 results).
+All three new analyses, their scripts, logs, derived tables, and the two new figures
+are organized in a self-contained new folder, **[`replication_extension/`](replication_extension/README.md)**,
+described in full there. Nothing in the original `sadaf/` pipeline was modified; the
+new analyses are additive.
 
 ---
 
 ## Data provenance
 
-The raw dataset underlying this repository consists of internal advertising-operations performance records maintained by **SearchM Co., Ltd.**, an official Naver and Kakao advertising agency, covering the Search and Shopping campaigns of a **37-advertiser panel** across **both Naver and Kakao** during March 2025. All references to "the panel," "the advertisers," or "the dataset" throughout this README point to this SearchM-operated, agency-standardized data; see §11 for data-availability and request procedures.
+The raw dataset underlying this repository consists of internal advertising-operations
+performance records maintained by **SearchM Co., Ltd.**, one of a limited number of
+agencies holding simultaneous official certification from both Naver and Kakao,
+covering the Search and Shopping campaigns of a **37-advertiser panel** during March
+2025. This dual certification requires the agency to meet each platform's
+campaign-management, reporting, and data-handling standards, which is the basis for
+the standardized measurement practices referenced throughout this README. All
+references to "the panel," "the advertisers," or "the dataset" point to this
+SearchM-operated data; see [§11](#11-data-availability) for access procedures.
 
 ---
 
@@ -57,12 +85,13 @@ The raw dataset underlying this repository consists of internal advertising-oper
    - 5.1 [H1 — Causal effect of CTR on conversion](#51-h1--causal-effect-of-ctr-on-conversion)
    - 5.2 [H2 — Suppression, not mediation, in the CTR→depth→conversion pathway](#52-h2--suppression-not-mediation-in-the-ctrdepthconversion-pathway)
    - 5.3 [H3 — Campaign-type moderation](#53-h3--campaign-type-moderation)
-   - 5.4 [H4 — Two-stage sequential ROAS prediction](#54-h4--two-stage-sequential-roas-prediction)
+   - 5.4 [H4 — Two-stage sequential ROAS prediction (revised, replication-aware)](#54-h4--two-stage-sequential-roas-prediction-revised-replication-aware)
    - 5.5 [R1 — Robustness check: Mamba sequence-length sensitivity](#55-r1--robustness-check-mamba-sequence-length-sensitivity)
-   - 5.6 [H5 — Individual-level attribution, cross-verified](#56-h5--individual-level-attribution-cross-verified)
-   - 5.7 [R2 — Robustness check: Cross-campaign domain shift and adaptation](#57-r2--robustness-check-cross-campaign-domain-shift-and-adaptation)
-   - 5.8 [RQ6 — External-validity checks (leave-one-advertiser-out)](#58-rq6--external-validity-checks-leave-one-advertiser-out)
-   - 5.9 [Statistical Power and Precision](#59-statistical-power-and-precision)
+   - 5.6 [R3 — Domain-gap diagnostic (descriptive, formerly H4c)](#56-r3--domain-gap-diagnostic-descriptive-formerly-h4c)
+   - 5.7 [H5 — Individual-level attribution, cross-verified](#57-h5--individual-level-attribution-cross-verified)
+   - 5.8 [R2 — Cross-campaign domain shift, adaptation, and the Shopping-only baseline](#58-r2--cross-campaign-domain-shift-adaptation-and-the-shopping-only-baseline)
+   - 5.9 [RQ6 — External-validity checks (leave-one-advertiser-out)](#59-rq6--external-validity-checks-leave-one-advertiser-out)
+   - 5.10 [Statistical Power and Precision](#510-statistical-power-and-precision)
 6. [Discussion](#6-discussion)
 7. [Threats to Validity and Open Items](#7-threats-to-validity-and-open-items)
 8. [Repository Structure](#8-repository-structure)
@@ -75,75 +104,143 @@ The raw dataset underlying this repository consists of internal advertising-oper
 
 ## 1. Motivation and Scope
 
-Cold-start advertisement forecasting — predicting the performance of ads that have run for only a few hours or days — is built almost entirely on markets where a single search platform (Google) commands more than 90% of query volume. Whether the causal structures, predictive architectures, and explainability patterns discovered in that setting generalize to a *differently concentrated* market is rarely tested, because the data to test it is rarely available.
+Cold-start advertisement forecasting — predicting the performance of ads that have run
+for only a few hours or days — is built almost entirely on markets where a single
+search platform (Google) commands more than 90% of query volume. Whether the causal
+structures, predictive architectures, and explainability patterns discovered in that
+setting generalize to a *differently concentrated* market is rarely tested, because the
+data to test it is rarely available.
 
-South Korea in March 2025 offers a boundary-condition test case. According to InternetTrend data reported by BusinessKorea, **domestic Korean platforms collectively held a majority share of Korean search volume** that month (Naver alone at **63.8%**) against Google's **28.7%** — a Korea-versus-Google concentration structure with no equivalent among the >90%-Google markets that most computational-advertising work assumes. This repository's dataset — 89,675 hourly ad-group performance records from a **37-advertiser panel's** Naver-and-Kakao Search/Shopping campaigns across March 2025, standardized and provided by SearchM Co., Ltd. (an official Naver and Kakao advertising agency) — is used as a **boundary-condition case study**, not as a claim of representativeness for the Korean market as a whole. This 37-advertiser, single-month, single-agency-provenance scope is a deliberate design choice, not an incidental limitation: it holds market structure, platform, and time period fixed while still capturing genuine between-advertiser variation, isolating the market-structure variable of interest without collapsing the sample to one firm.
+South Korea in March 2025 offers a boundary-condition test case. Domestic Korean
+platforms collectively held a majority share of Korean search volume that month (Naver
+alone at **63.8%**) against Google's **28.7%** — a concentration structure with no
+equivalent among the >90%-Google markets that most computational-advertising work
+assumes. This repository's dataset — 89,675 hourly ad-group performance records from a
+**37-advertiser panel's** Naver-and-Kakao Search/Shopping campaigns across March 2025,
+provided by SearchM Co., Ltd. — is used as a **boundary-condition case study**, not as a
+claim of representativeness for the Korean market as a whole.
 
-Three methodological pillars are combined into a single pipeline:
+Testing this boundary condition requires more than re-running existing pipelines on
+new data: three features of the dataset itself independently break standard
+assumptions on which causal, predictive, and explainability methods rely, and each maps
+directly onto one of SADAF's three pillars:
 
-| Pillar | Method | Question it answers |
+| Pillar | Method | What it addresses |
 |---|---|---|
 | **Causal estimation** | PSM + doubly-robust IPW, Baron–Kenny mediation, HC3-robust moderated OLS | *Why* do ads convert? |
-| **Bayesian sequential prediction** | Logistic/Ridge, MLP, LSTM, BiLSTM, GRU, Bayesian LSTM, Mamba, on β-VAE + Gaussian-copula + moving-block-bootstrap augmented sequences | *What* will ROAS be, under N=174 real training sequences? |
-| **Explainability (individual-level, cross-verified)** | Individual SHAP, Permutation SHAP, Integrated Gradients | *Which* features drive outcomes, and does that differ across ad-group clusters — verified across three independent methods rather than assumed by a single joint estimator? |
+| **Bayesian sequential prediction** | Logistic/Ridge, MLP, LSTM, BiLSTM, GRU, Bayesian LSTM, Mamba, on β-VAE + Gaussian-copula + moving-block-bootstrap augmented sequences | *What* will ROAS be, under N=174 real training sequences? Structured as a two-stage pipeline because of ROAS's structural zero-inflation. |
+| **Explainability (individual-level, cross-verified)** | Individual SHAP, Permutation SHAP, Integrated Gradients | *Which* features drive outcomes, and does that differ across ad-group clusters — verified across three independent methods rather than assumed by a single joint estimator, since joint group-level Shapley methods are not conventionally warranted at this study's 7-feature dimensionality? |
 
-Two supplementary robustness checks (Mamba's sequence-length sensitivity, R1; cross-campaign feature-distribution shift, R2) sit alongside these three pillars without being counted as independent hypotheses. Every hypothesis is additionally read against the statistical power available to support it (§5.9) — this is treated as part of the evidence, not a caveat appended afterward.
+Two supplementary robustness checks (Mamba's sequence-length sensitivity, R1;
+cross-campaign feature-distribution shift and domain adaptation, R2) and a descriptive
+overfitting diagnostic (R3) sit alongside these three pillars without being counted as
+independent hypotheses. Every hypothesis is additionally read against the statistical
+power available to support it (§5.10).
 
 ---
 
 ## 2. Research Questions and Hypotheses
 
-**RQ0 (framing, not itself tested).** Do causal, predictive, and explainability patterns established primarily in Google-dominated advertising markets replicate under a structurally different, less concentrated, domestically dominated search ecosystem? March 2025 Korea (domestic platforms' combined majority, led by Naver at 63.8%, vs. Google's 28.7%) is the boundary-condition test case, answered by the pattern of support across H1–H5, R1–R2, and RQ6 together.
+**RQ0 (framing, not itself tested).** Do causal, predictive, and explainability
+patterns established primarily in Google-dominated advertising markets replicate under
+a structurally different, less concentrated, domestically dominated search ecosystem?
+March 2025 Korea (domestic platforms' combined majority, led by Naver at 63.8%, vs.
+Google's 28.7%) is the boundary-condition test case, answered by the pattern of support
+across H1–H5, R1–R3, and RQ6 together.
 
-**H1.** Advertisements with above-median CTR causally increase conversion probability relative to below-median-CTR advertisements, net of impression volume, cost, and campaign type. *(PSM + doubly robust IPW.)*
+**H1.** Advertisements with above-median CTR causally increase conversion probability
+relative to below-median-CTR advertisements, net of impression volume, cost, and
+campaign type. *(PSM + doubly robust IPW.)*
 
-**H2.** Browsing depth significantly mediates the relationship between CTR and conversion probability, with the direction of the indirect effect determined empirically. *(Baron–Kenny decomposition + bootstrap CI.)* — **Tested outcome:** the data show a *suppression* pattern (both component paths negative, product positive), an informative departure from the mediation mechanism this hypothesis anticipated; see §5.2.
+**H2.** Browsing depth significantly mediates the relationship between CTR and
+conversion probability, with the direction of the indirect effect determined
+empirically. *(Baron–Kenny decomposition + bootstrap CI, now paired with a
+probability-scale direct/total-effect decomposition; see §5.2.)* — **Tested outcome:**
+the data show a *suppression* pattern (both component paths negative, product
+positive), an informative departure from the mediation mechanism this hypothesis
+anticipated.
 
-**H3.** The CTR→ROAS relationship is moderated by campaign type, with a stronger slope for Search than for Shopping campaigns, consistent with Search traffic reflecting more deliberate query intent. *(HC3-robust moderated OLS.)*
+**H3.** The CTR→ROAS relationship is moderated by campaign type, with a stronger slope
+for Search than for Shopping campaigns, because Search campaigns are triggered by
+user-typed queries that reveal explicit purchase intent, whereas Shopping campaigns
+surface algorithmically matched product listings with comparatively less revealed
+intent. *(HC3-robust moderated OLS.)*
 
-**H4a.** Under the extreme training-sample sparsity characteristic of cold-start forecasting (fewer than 200 real training sequences), **a parsimonious linear classifier achieves predictive performance comparable to or better than recurrent neural architectures** on the antecedent binary conversion-classification task, reflecting a bias-variance tradeoff in which the available sample cannot support the added capacity of recurrent architectures.
+**H4a.** Under the extreme training-sample sparsity characteristic of cold-start
+forecasting (fewer than 200 real training sequences), **a parsimonious linear
+classifier achieves predictive performance comparable to or better than recurrent
+neural architectures** on the antecedent binary conversion-classification task.
 
-**H4b.** Conditional on non-zero ROAS, a recurrent architecture equipped with the paper's augmentation pipeline achieves significantly lower forecasting error than linear and feed-forward baselines, evaluated by pairwise Diebold–Mariano tests with multiplicity correction and reported with the statistical power available at n = 24.
+**H4b.** Conditional on non-zero ROAS, a recurrent architecture equipped with the
+paper's augmentation pipeline achieves significantly lower forecasting error than
+linear and feed-forward baselines, evaluated by pairwise Diebold–Mariano tests with
+multiplicity correction and reported with the statistical power available at n = 24.
+**As of v7.0, this is tested both on the preregistered single split and on a
+five-seed replication; see §5.4.**
 
-**H4c.** The sign of the gap between real-validation loss and training loss at the matched best-validation epoch differs across model architectures, with at most one architecture exhibiting the classical overfitting pattern (validation loss exceeding training loss).
+> **R1 (supplementary robustness check, not an independent hypothesis).** Is Mamba's
+> comparative weakness at 4-step sequences an artifact of sequence length? Evaluated at
+> SEQ_LEN = 4 vs. 6 in §5.5.
 
-> **R1 (supplementary robustness check, not an independent hypothesis).** Is Mamba's comparative weakness at 4-step sequences (H4b/H4c) an artifact of sequence length? Evaluated at SEQ_LEN = 4 vs. 6 in §5.5.
+> **R3 (descriptive diagnostic, not a directional hypothesis; formerly phrased as
+> H4c).** Rather than predicting *which* architecture will show the classical
+> overfitting signature, we report, for each of the seven architectures, the
+> epoch-consistent gap between real-validation loss and training loss at the matched
+> best epoch — reported descriptively because the relationship between architectural
+> complexity and this gap is not established a priori for four-to-six-step cold-start
+> sequences. See §5.6.
 
-**H5.** Ad-group clusters exhibit statistically distinct engagement-and-spend attribution patterns under individual-feature Shapley attribution, and this pattern is corroborated by convergent rankings across two additional, independently computed attribution methods (Integrated Gradients and a Monte Carlo permutation-based Shapley estimator), evaluated together with the power available at the resulting cluster sizes.
+**H5.** Ad-group clusters exhibit statistically distinct engagement-and-spend
+attribution patterns under individual-feature Shapley attribution, corroborated by
+convergent rankings across two additional, independently computed attribution methods
+(Integrated Gradients and a Monte Carlo permutation-based Shapley estimator).
 
-> **R2 (supplementary robustness check, not an independent hypothesis).** Do feature distributions differ significantly between Search and Shopping campaigns, and does that shift motivate frozen-encoder domain adaptation? Reported in §5.7 as corroborating, distributional-level evidence for H3, not as an independent sixth hypothesis.
+> **R2 (supplementary robustness check, not an independent hypothesis).** Do feature
+> distributions differ significantly between Search and Shopping campaigns, and does
+> that shift motivate frozen-encoder domain adaptation? Reported in §5.8, now including
+> a Shopping-only baseline that decomposes the naive-transfer error into a genuine
+> domain-shift component and Shopping's intrinsic forecasting difficulty.
 
-**RQ6 (external-validity boundary).** Does the predictive framework generalize *within* the single-market, single-agency-provenance, single-month scope of this study, assessed via **leave-one-advertiser-out** cross-validation across the full 37-advertiser panel? Generalization beyond this scope — to other platforms, periods, or advertiser panels — is explicitly out of scope.
+**RQ6 (external-validity boundary, not a sixth hypothesis).** Does the predictive
+framework generalize *within* the single-market, single-agency-provenance, single-month
+scope of this study, assessed via **leave-one-advertiser-out** cross-validation across
+the full 37-advertiser panel? We label this RQ6, not H6, deliberately: H1–H5 are
+directional, falsifiable hypotheses paired with a specific statistical test, while RQ6
+is a scope question evaluated descriptively. Generalization beyond this scope — to
+other platforms, periods, or advertiser panels — is explicitly out of scope.
 
 ---
 
 ## 3. Framework Architecture
 
-SADAF routes a single sparse, 37-advertiser-panel dataset through a shared structural diagnosis and then into three parallel, cross-referenced pillars — causal estimation, Bayesian sequential prediction, and explainability — which converge on an integrated, power-calibrated verdict (H1–H5), reported alongside two supplementary robustness checks (R1, R2) and an explicit external-validity boundary (RQ6).
+SADAF routes a single sparse, 37-advertiser-panel dataset through a shared structural
+diagnosis and then into three parallel, cross-referenced pillars — causal estimation,
+Bayesian sequential prediction, and explainability — which converge on an integrated,
+power-calibrated verdict.
 
 <p align="center"><img src="assets/fig3_framework_architecture.png" width="820" alt="SADAF framework architecture"></p>
-<p align="center"><em>Figure 1. SADAF framework architecture (v6.1, regenerated). A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a–c), and explainability (H5) — which converge on an integrated, FDR-corrected, power-calibrated verdict. The Explainability box now shows the corrected, row-level design: clusters n = 1,214 / 217 / 28, three-method attribution (Individual SHAP + Permutation SHAP + Integrated Gradients), rank correlation ρ = .607–.964 — matching Table 9/10 and §6.7 exactly. The △ symbol marks H2 as an informative departure from its originally hypothesized mediating mechanism (suppression rather than mediation; see §5.2), distinct from ✓ (supported as originally specified). R1, R2, and RQ6 (leave-one-advertiser-out across 37 advertisers) are reported alongside the core verdict but are not independent headline hypotheses.</em></p>
+<p align="center"><em>Figure 1. SADAF framework architecture (v7.0). A shared structural diagnosis (ZINB vs. ZIP) feeds three parallel pillars — causal estimation (H1–H3), Bayesian sequential prediction (H4a, H4b, R1), and explainability (H5) — which converge on an integrated, FDR-corrected, power-calibrated verdict. H4b is now marked △ (informative departure) rather than ✓: the single-split result favored LSTM, but this ranking is split-dependent under five-seed replication (see §5.4 and <code>replication_extension/</code>). R1, R2, R3, and RQ6 (leave-one-advertiser-out across 37 advertisers) are reported alongside the core verdict but are not independent headline hypotheses.</em></p>
 
 <details>
 <summary>Text/Mermaid version of Figure 1</summary>
 
 ```mermaid
 flowchart TD
-    A["Raw hourly ad-group performance data\n89,675 rows × 32 columns\nKorean search-advertising ecosystem, March 2025\n37-advertiser panel, standardized and provided by SearchM Co., Ltd.\n(official agency unifying Naver and Kakao operations)"] --> B["Structural diagnosis\nZINB vs ZIP\nΔAIC = −2798.9 → ZINB preferred"]
-    B --> C1["H1 — PSM + doubly-robust IPW\nIPW-ATT = 0.129 (n=14,987, pooled across 37 advertisers)"]
-    B --> C2["H2 — Mediation test (Baron–Kenny)\nresult: negative SUPPRESSOR, not mediation\na×b = 0.027, path signs both negative"]
+    A["Raw hourly ad-group performance data\n89,675 rows × 32 columns\n37-advertiser panel, SearchM Co., Ltd.\n(Naver + Kakao, March 2025)"] --> B["Structural diagnosis\nZINB vs ZIP\nΔAIC = −2798.9 → ZINB preferred"]
+    B --> C1["H1 — PSM + doubly-robust IPW\nIPW-ATT = 0.129 (n=14,987)"]
+    B --> C2["H2 — Mediation test (Baron–Kenny + AME)\nresult: negative SUPPRESSOR, not mediation"]
     B --> C3["H3 — Moderation (HC3-OLS)\nβ_int = 0.386, p<0.0001 (n=9,069)"]
     C1 --> D["Augmentation\nβ-VAE + Gaussian copula + moving-block bootstrap\n174 real → ~870 synthetic, FSD = −0.047"]
     C2 --> D
     C3 --> D
     D --> E1["H4a — Classification\nparsimony hypothesis SUPPORTED\nLR-Cls wins (AUC 0.614) vs. all recurrent models"]
-    D --> E2["H4b — Regression\nLSTM wins RMSE (1.21 vs. 1.60)\nread with a priori MDE, not raw significance count"]
-    D --> E3["H4c — Domain-gap diagnostic\nonly Mamba shows classic overfit gap"]
+    D --> E2["H4b — Regression (SPLIT-DEPENDENT)\nSeed-42: LSTM wins (RMSE 1.21)\nFive-seed: Bayesian LSTM most stable"]
+    D --> E3["R3 — Domain-gap diagnostic (descriptive)\nonly Mamba shows classic overfit gap"]
     E1 --> F["H5 — Individual-level attribution, cross-verified\nIndividual SHAP + Permutation SHAP + Integrated Gradients\nall 3 methods: Group0 attribution differs across clusters (p<.001)"]
     E2 --> F
     E3 --> F
     F --> R1["R1 (robustness) — Mamba seq-length 4→6\nnot the accuracy leader at either length"]
-    F --> R2["R2 (robustness) — Search vs Shopping shift\n6 of 7 features significant, KS test"]
+    F --> R2["R2 (robustness) — Search vs Shopping shift\n+ Shopping-only baseline decomposition"]
     R1 --> H["RQ6 — Leave-one-advertiser-out CV (37 real folds)\nRMSE = 1.2268 ± 0.5789, 95% CI [1.040, 1.413]"]
     R2 --> H
 ```
@@ -170,21 +267,15 @@ flowchart TD
 
 ### 4.2 Structural zero-inflation
 
-ROAS variance/mean overdispersion is 127,761 — several orders of magnitude beyond what a Poisson or standard negative-binomial model tolerates. A Zero-Inflated Negative Binomial (ZINB) model is preferred over ZIP by a wide margin (ΔAIC = −2,798.9; AIC = 71,958.2, BIC = 72,025.3). In the count component, `log_CTR` (β = 0.473, p<0.001) and `log_impression` (β = 0.218, p<0.001) increase expected ROAS while `log_cost` (β = −0.216, p<0.001) decreases it; in the inflation component, both `log_CTR` (β = −0.190) and `log_cost` (β = −0.581) reduce the probability of a structural zero. This motivates the two-stage prediction design in §5.4. Given n = 32,494 paid rows pooled across the full 37-advertiser panel, this diagnosis is well-powered; the power constraints discussed in §5.9 apply to the sequence-level and cluster-level tests in §5.4–5.6, not to this row-level diagnosis.
+ROAS variance/mean overdispersion is 127,761 — several orders of magnitude beyond what
+a Poisson or standard negative-binomial model tolerates. A Zero-Inflated Negative
+Binomial (ZINB) model is preferred over ZIP by a wide margin (ΔAIC = −2,798.9; AIC =
+71,958.2, BIC = 72,025.3). This distributional profile is the row-level evidence that a
+single end-to-end regression cannot adequately separate "does this ad group convert at
+all" from "how much ROAS, given that it converts" — which is exactly why §5.4 formalizes
+prediction as a two-stage pipeline rather than a single model.
 
-### 4.3 Campaign mix and market-concentration indicators (37-advertiser panel, descriptive only)
-
-<p align="center"><img src="assets/fig1_market_context.png" width="820" alt="Campaign-type mix and hourly spend concentration"></p>
-<p align="center"><em>Figure 2. Campaign-type mix and hourly concentration of paid spend across the 37-advertiser panel, March 2025 (v6.1, regenerated — caption corrected from "this advertiser" to "37-advertiser panel"; underlying values unchanged).</em></p>
-
-| Metric | Value |
-|---|---|
-| Campaign-type mix | Shopping 78.83% (70,693 rows) / Search 19.37% (17,373 rows) / Zero-cost 1.79% (1,609 rows) |
-| Top-3 spend-share hours (KST) | Hour 0: 77.65% · Hour 1: 9.47% · Hour 3: 2.33% (89.45% combined) |
-
-These figures describe this 37-advertiser panel's aggregate portfolio and scheduling strategy; they are scope indicators for interpreting §6, not claims about the Korean advertising market generally.
-
-### 4.4 Sequence construction (group-aware split)
+### 4.3 Sequence construction (group-aware split)
 
 | Split | Sequences (SEQ_LEN = 4) |
 |---|---|
@@ -193,9 +284,18 @@ These figures describe this 37-advertiser panel's aggregate portfolio and schedu
 | Test | 24 |
 | **Total** | **222** |
 
-Drawn from the full **37-advertiser panel**. A SEQ_LEN = 6 variant, used only for the R1 robustness check (§5.5), yields 125 sequences. Splits are assigned at the ad-group level — not the individual row or time step — to prevent information leakage across splits; the 24 test-set units are ad groups, not advertisers (37 advertisers is the count for the panel overall and for the LOAO-CV folds in §5.8, which is a separate, advertiser-level split).
+Splits are assigned at the ad-group level to prevent information leakage. Because 174
+real training sequences are insufficient to train recurrent architectures directly, the
+training split only is expanded via the three-stage augmentation pipeline (β-VAE +
+Gaussian copula + moving-block bootstrap), yielding ~870 augmented sequences (5× the
+real training count — a pre-registered ceiling, not an empirically tuned value),
+gated by the Fréchet Sequence Distance (FSD) diagnostic: **FSD = −0.047**, against an
+acceptance threshold of 2.0. Validation and test sequences are never augmented.
 
-Because 174 real training sequences are insufficient to train recurrent architectures directly, the training split only is expanded via a three-stage augmentation pipeline (β-VAE + Gaussian copula + moving-block bootstrap), yielding ~870 augmented sequences, gated by the Fréchet Sequence Distance (FSD) diagnostic. **FSD = −0.047** (N=174→870), against an acceptance threshold of 2.0. Because this FSD implementation is a bias-corrected estimator, values at or near zero — including small negatives — indicate the strongest possible pass, not a violation of non-negativity. Validation and test sequences are never augmented.
+> **v7.0 addition:** whether this augmentation actually improves downstream accuracy —
+> as opposed to merely passing the FSD distributional check — is now tested directly
+> via a real-only-trained control condition; see §5.4 and
+> [`replication_extension/`](replication_extension/README.md#2-real-only-vs-augmented-ablation-11_augmentation_ablationpy).
 
 ---
 
@@ -208,11 +308,13 @@ Because 174 real training sequences are insufficient to train recurrent architec
 | PSM-ATT (n matched = 14,987) | 0.1347 | [0.1254, 0.1434] | Corroborating |
 | **Doubly Robust IPW-ATT** | **0.1286** | — | **Primary** |
 
-The two estimators agree within 0.006, below the pre-specified 0.05 consistency threshold, despite residual covariate imbalance on `log_impression` and `log_cost` after matching — the doubly robust correction is precisely why that imbalance does not translate into estimator disagreement. At n = 14,987 matched pairs, **pooled across the full 37-advertiser panel**, this comparison has near-certain power (§5.9).
-
-**H1: supported.** High-CTR ads causally increase conversion probability by roughly 12.9 percentage points.
+**H1: supported.** High-CTR ads causally increase conversion probability by roughly
+12.9 percentage points. At n = 14,987 matched pairs, this comparison has near-certain
+power (§5.10).
 
 ### 5.2 H2 — Suppression, not mediation, in the CTR→depth→conversion pathway
+
+**Panel A — coefficient-product decomposition:**
 
 | Path | Estimate | 95% Bootstrap CI (B=2,000) |
 |---|---|---|
@@ -220,13 +322,34 @@ The two estimators agree within 0.006, below the pre-specified 0.05 consistency 
 | b (Depth → Conversion, controlling for CTR) | −0.0861 | — |
 | Indirect (a × b) | 0.0265 | [0.0200, 0.0337] |
 
-Both component paths are negative, but their product is positive: a **negative statistical suppressor** pattern, not classical mediation. Substantively: high-CTR ads reduce browsing depth (immediate-click behavior bypasses deliberate browsing), while, among ads that do generate depth, deeper browsing is associated with *lower* conversion — consistent with depth partly proxying decision hesitancy rather than engagement.
+**Panel B — probability-scale direct/total decomposition (average marginal effects):**
 
-**H2, as originally specified, hypothesized that browsing depth would *mediate* the CTR→conversion relationship** — i.e., transmit part of CTR's effect on conversion in a consistent direction. The observed pattern is a *suppression* effect instead: both paths negative, product positive, which is the opposite structural signature from mediation. **We report H2 as an informative departure from its originally hypothesized mediating mechanism, not as support for it.** The indirect path is statistically distinguishable from zero (bootstrap 95% CI excludes zero), so the analysis does yield a robust, substantively informative finding — just not the one H2 predicted. This distinction is flagged consistently across the Abstract, Figure 1, and this section, because labeling H2 "supported" without qualification would imply the hypothesized mediating mechanism was confirmed, when the opposite mechanism (suppression) was in fact found.
+| Quantity | Estimate | 95% Bootstrap CI |
+|---|---|---|
+| Total effect of CTR (Depth excluded) | 0.0037 | [0.0034, 0.0041] |
+| Direct effect of CTR (Depth held constant) | 0.0031 | [0.0028, 0.0034] |
+| Indirect effect (Total − Direct) | 0.0006 | [0.0005, 0.0008] |
+
+*Note: Panels A and B are estimated on different scales (mixed OLS/logit coefficients
+vs. probability-scale AME) and are two distinct, independently bootstrapped estimates —
+they should not be summed or compared in magnitude.*
+
+Both component paths in Panel A are negative, but their product is positive: a
+**negative statistical suppressor** pattern, not classical mediation. Panel B
+corroborates this on an independent scale: the indirect pathway is positive and
+distinguishable from zero, while the direct effect remains ~83% of the total AME
+(0.0031 of 0.0037) — CTR's influence on conversion is overwhelmingly direct, not
+depth-mediated.
+
+**H2, as originally specified, hypothesized a mediating mechanism. We report H2 as an
+informative departure from that mechanism, not as support for it** — both paths
+negative, product positive is the opposite structural signature from mediation, though
+the indirect path is itself a robust, statistically distinguishable finding.
 
 ### 5.3 H3 — Campaign-type moderation
 
-HC3-robust OLS interaction (`log_ROAS ~ log_CTR × is_search + log_cost + log_impression`, n = 9,069, R² = 0.655):
+HC3-robust OLS interaction (`log_ROAS ~ log_CTR × is_search + log_cost + log_impression`,
+n = 9,069, R² = 0.655):
 
 | Quantity | Value |
 |---|---|
@@ -234,9 +357,12 @@ HC3-robust OLS interaction (`log_ROAS ~ log_CTR × is_search + log_cost + log_im
 | Marginal effect, Search | 0.949 |
 | Marginal effect, Shopping | 0.563 |
 
-**H3: supported.** A one-log-unit increase in CTR is associated with roughly 68% more log-ROAS lift on Search campaigns than on Shopping campaigns, consistent with Search traffic reflecting more deliberate, higher-intent queries. Corroborated at the distributional level by R2 (§5.7).
+**H3: supported.** The estimated CTR–ROAS elasticity is 0.949 for Search campaigns and
+0.563 for Shopping campaigns — CTR improvements are associated with a stronger ROAS
+response on Search than on Shopping, consistent with Search traffic reflecting more
+deliberate, higher-intent queries.
 
-### 5.4 H4 — Two-stage sequential ROAS prediction
+### 5.4 H4 — Two-stage sequential ROAS prediction (revised, replication-aware)
 
 **Stage 1 — classification (H4a): parsimony under sparsity.**
 
@@ -247,11 +373,14 @@ HC3-robust OLS interaction (`log_ROAS ~ log_CTR × is_search + log_cost + log_im
 | Bayesian LSTM | 0.5894 | 0.3151 | 0.2723 |
 | Multilayer Perceptron | 0.5445 | 0.2951 | 0.2989 |
 
-**H4a: supported.** Logistic regression attains the highest AUC of any model, regardless of which recurrent architecture it is benchmarked against. At 174 real training sequences, the binary conversion signal is close to linearly separable, and the added representational capacity of a recurrent classifier is not merely unnecessary but actively counterproductive — a falsifiable, actionable condition (near-linear separability at n ≈ 200) under which parsimonious models should be preferred.
+**H4a: supported**, though the margin over LSTM is narrow relative to bootstrap
+uncertainty at n = 24 (evidence of parity rather than large superiority). The n=24 test
+set's class balance (17 of 24 sequences, 70.8%, contain a conversion event) is a
+byproduct of group-aware splitting, not a designed ratio, and is flagged as a plausible
+contributor to this narrow margin.
 
-**Stage 2 — regression (H4b).** Conditional on non-zero ROAS, seven architectures are compared on log-ROAS RMSE (n = 24 test sequences):
-
-<p align="center"><img src="assets/fig1_regression_comparison.png" width="680" alt="Regression-stage model comparison"></p>
+**Stage 2 — regression (H4b), single-split result:**
+*(Bar-chart figure for this table is unchanged from v6.1 and carried over from the existing `figures/` pipeline output; not reproduced in this update.)*
 
 | Model | RMSE | MAE | R² |
 |---|---|---|---|
@@ -263,17 +392,66 @@ HC3-robust OLS interaction (`log_ROAS ~ log_CTR × is_search + log_cost + log_im
 | Mamba | 1.6356 | 1.3308 | 0.5142 |
 | Multilayer Perceptron | 1.7086 | 1.3538 | 0.4699 |
 
-<p align="center"><img src="assets/fig3_dm_heatmap.png" width="880" alt="Diebold-Mariano pairwise heatmap"></p>
+Full pairwise Diebold–Mariano heatmap (raw and BH-FDR corrected, all 21 pairs):
 
-Pairwise Diebold–Mariano tests, raw and BH-FDR-corrected: **of 21 pairs, 18 are computable** (Mamba–Ridge, Mamba–MLP, and Ridge–MLP did not converge and are excluded). **Of the 18 computable pairs, 13 are significant at raw p < .05; 8 remain significant after FDR correction.** LSTM beats GRU, BiLSTM, Mamba, Ridge, MLP, and Bayesian LSTM at FDR-corrected significance.
+<p align="center"><img src="assets/fig5_dm_heatmap.png" width="880" alt="Diebold-Mariano pairwise heatmap, full 21-pair"></p>
 
-**H4b: supported.** LSTM (RMSE = 1.2099) significantly outperforms Ridge (RMSE = 1.6033); DM p_raw = 0.0078, p_FDR = 0.0316. **Caution on the remaining pairs:** the 8 comparisons surviving FDR correction are concentrated among the pairs with the largest observed RMSE differences — consistent with genuine architecture differences, but, given the deterministic relationship between post-hoc power and observed p-values, this concentration does not independently rule out a multiple-testing artifact. The a priori minimum-detectable-effect at n = 24 (§5.9: dz = 0.60 raw α, dz = 0.88 FDR-equivalent α) is the more informative gauge of what this sample size can support; non-significant pairs should be read as inconclusive given the sample, not as evidence of equivalence.
+Of 21 pairs, 18 are computable (Mamba–Ridge, Mamba–MLP, Ridge–MLP did not converge);
+13 of 18 are significant at raw p < .05, and **8 remain significant after FDR
+correction** — all 6 pairs involving LSTM, plus GRU vs. Ridge and GRU vs. MLP.
 
-**H4c — domain gap as an overfitting diagnostic**, computed with strict epoch-matching (train loss paired with the *same* epoch used to identify each architecture's best real-validation loss):
+**v7.0 revision — five-seed replication:**
 
-<p align="center"><img src="assets/fig6_domain_gap_corrected.png" width="720" alt="Real-validation vs train-loss domain gap by architecture, epoch-matched"></p>
+<p align="center"><img src="assets/fig4_regression_fiveseed.png" width="820" alt="Five-seed RMSE distribution vs. Seed-42"></p>
+<p align="center"><em>Figure 2. Regression-stage forecasting, five-seed RMSE distribution vs. the preregistered Seed-42 single split. Sorted by five-seed mean RMSE. LSTM's Seed-42 result (red star, RMSE=1.2099) is the lowest single score in the whole panel, but LSTM ranks #1 in only 1 of 5 seeds (20%) and has the second-largest cross-seed SD. Bayesian LSTM has the lowest five-seed mean (1.3604) and smallest SD (0.0240), ranking #1 in 2 of 5 seeds (40%).</em></p>
 
-| Model | Best epoch (real) | Best val (real) | Train loss at same epoch | gap_real (val_real − train) | Pattern |
+| Model | Single-split (Seed 42) RMSE | Five-seed mean RMSE | Five-seed SD | % seeds ranked #1 |
+|---|---|---|---|---|
+| Bayesian LSTM | 1.3420 | **1.3604** | **0.0240** | 40.0 |
+| GRU | 1.3984 | 1.4080 | 0.0873 | 20.0 |
+| BiLSTM | 1.4998 | 1.4577 | 0.1661 | 20.0 |
+| LSTM | **1.2099** | 1.4821 | 0.1631 | 20.0 |
+| Ridge | 1.6033 | 1.6033 | 0.0000 | 0.0 |
+| Mamba | 1.6356 | 1.6254 | 0.1530 | 0.0 |
+| MLP | 1.7086 | 1.8284 | 0.2328 | 0.0 |
+
+Kendall's W (rank concordance across the 5-seed × 7-architecture panel) = 0.6514
+(moderate, not near-1 concordance); a Friedman test confirms architecture RMSEs are not
+interchangeable across seeds (χ²=19.54, p=.0033) — architecture matters, but *which*
+architecture wins is not fixed at n=24.
+
+**H4b: partially supported.** The specific single-split claim "LSTM is the best
+forecaster" does not replicate — it is a Seed-42-favorable artifact. The broader claim
+— gated recurrent architectures (Bayesian LSTM, GRU, BiLSTM, LSTM) outperform linear
+and feed-forward baselines (Ridge, MLP) — holds across both the single split and the
+five-seed panel, and Bayesian LSTM emerges as the most reliable single candidate on
+this evidence, combining the lowest mean error with the highest stability. Full
+detail, scripts, and raw per-seed data: [`replication_extension/`](replication_extension/README.md#1-five-seed-stability-check-10_multiseed_stabilitypy).
+
+**v7.0 addition — real-only vs. augmented ablation.** A matched control trained on the
+174 real sequences only (no augmentation) shows augmentation slightly *increases* mean
+RMSE for 6 of 7 architectures (none significant at n=5 seeds, Wilcoxon p≥.0625). The
+sole clear exception is MLP, where augmentation prevents catastrophic overfitting
+(real-only RMSE 4.17–4.74 vs. augmented ~1.83; Wilcoxon p=.0625, the minimum attainable
+at n=5). **The augmentation pipeline's demonstrated contribution in this dataset is
+primarily regularization for overfitting-prone architectures, not a general accuracy
+improvement for recurrent forecasters already well suited to short sequences.** Passing
+the FSD distributional-fidelity gate (§4.3) and improving downstream accuracy are shown
+here to be distinct properties. Full detail: [`replication_extension/`](replication_extension/README.md#2-real-only-vs-augmented-ablation-11_augmentation_ablationpy).
+
+### 5.5 R1 — Robustness check: Mamba sequence-length sensitivity
+
+Mamba is additionally evaluated at a six-step sequence length. **It remains the
+weakest or near-weakest performer at both lengths and across the five-seed panel**,
+corroborating prior evidence that selective state-space architectures can be
+disadvantaged on short, cold-start-length sequences.
+
+### 5.6 R3 — Domain-gap diagnostic (descriptive, formerly H4c)
+
+Computed with strict epoch-matching (train loss paired with the same epoch used to
+identify each architecture's best real-validation loss):
+
+| Model | Best epoch (real) | Best val (real) | Train loss at same epoch | gap_real | Pattern |
 |---|---|---|---|---|---|
 | Bayesian LSTM | 42 | 0.7525 | 1.0346 | −0.2821 | train > val — not overfitting |
 | LSTM | 22 | 0.7047 | 0.7909 | −0.0862 | train > val — not overfitting |
@@ -281,33 +459,22 @@ Pairwise Diebold–Mariano tests, raw and BH-FDR-corrected: **of 21 pairs, 18 ar
 | BiLSTM | 23 | 0.7587 | 0.8389 | −0.0802 | train > val — not overfitting |
 | **Mamba** | 35 | 0.7910 | 0.6768 | **+0.1142** | **val > train — classical overfitting signature** |
 
-*Augmented-validation domain gap (context only):* BayesianLSTM −0.3494, LSTM −0.0947, GRU −0.1181, BiLSTM −0.1513, Mamba −0.1574.
+Reported descriptively, not as a directional hypothesis test, since `gap_real` is a
+deterministic function of a single best-epoch loss pair per architecture rather than a
+distribution over independent samples. **Mamba is the only architecture displaying the
+classical overfitting signature** on real-validation data. Bayesian LSTM's large
+train-above-validation gap is more plausibly attributable to Monte Carlo dropout
+inflating its reported training loss than to genuine overfitting proneness.
 
-**H4c: supported**, under a revised, descriptive formulation. Under the sign convention above, **Mamba is the only architecture displaying the classical overfitting signature** on real-validation data (its training loss at the epoch minimizing real-validation loss is *below* that validation loss — the textbook pattern). The other four architectures show the opposite ordering. This categorical difference is **not tested for statistical significance**, since `gap_real` is a deterministic function of a single best-epoch loss pair per architecture, not a distribution over independent samples — it is reported as a diagnostic pattern. Bayesian LSTM's large train-above-validation gap is more plausibly attributable to Monte Carlo dropout inflating its reported training loss than to overfitting proneness.
+### 5.7 H5 — Individual-level attribution, cross-verified
 
-### 5.5 R1 — Robustness check: Mamba sequence-length sensitivity
+Three independently computed attribution methods — Individual SHAP, Permutation SHAP,
+Integrated Gradients — are computed on the identical model and evaluation sample, and
+cross-method convergence is treated as the evidentiary standard, following the
+observation that joint group-level Shapley methods are conventionally motivated by,
+and most informative in, higher-dimensional feature spaces than this study's 7 features.
 
-Mamba is additionally evaluated at a six-step sequence length to test whether its weaker accuracy at four steps (§5.4) is a length artifact. **It remains the weakest or near-weakest performer at both lengths**, corroborating, in a new empirical setting, prior evidence (Liu et al. 2025; Wang et al. 2025) that selective state-space architectures can be disadvantaged on short, cold-start-length sequences. This context matters for H4c: Mamba's failure mode (overfitting, per the domain-gap diagnostic) is qualitatively distinct from, and not resolved by, varying sequence length.
-
-### 5.6 H5 — Individual-level attribution, cross-verified
-
-**This section replaces the group-level GS-SHAP (HSIC-grouped Shapley) design used in earlier drafts.** Chamma, Thirion & Engemann (2024) note that joint group-level Shapley methods are conventionally motivated by, and most informative in, high-dimensional feature spaces; this study's 7-feature set does not meet that threshold. Rather than assuming a joint estimator correctly resolves dependence among engagement/spend features, this design computes attribution **individually, feature by feature**, using three independently computed methods on the identical trained model and evaluation sample — **Individual SHAP**, **Permutation SHAP**, and **Integrated Gradients** — and treats **cross-method convergence**, not agreement within one joint estimator, as the evidentiary standard.
-
-Per-observation attributions for the five engagement/spend features (CTR, CVR, Depth, log_cost, log_impression — retained as "Group 0" purely as a reporting label, not a joint-estimator input) and the two temporal features (hour_sin, hour_cos — "Group 1") are summarized via a Gini coefficient, computed separately within each of three ad-group clusters (k-means on engagement/spend features).
-
-<p align="center"><img src="assets/fig7_individual_attribution_verification.png" width="880" alt="Individual-attribution verification"></p>
-<p align="center"><em>Figure 3. Individual-attribution verification. Top row: Gini-coefficient attribution concentration by cluster and method for Group 0 (engagement/spend) and Group 1 (temporal) features, computed on each cluster's row-level sample (n = 1,214 / 217 / 28). Bottom-left: Kruskal-Wallis H statistics testing whether Group 0 attribution differs across clusters, computed separately for each of the three attribution methods on the same row-level samples. Bottom-right: Spearman rank correlation of feature-mean absolute attribution between each pair of methods, by cluster — this test compares rankings across the seven model features (n = 7 per cluster), not the row-level observations directly.</em></p>
-
-**Cluster sizes** (row-level observations underlying the Gini/Kruskal-Wallis/Spearman statistics below, not unique ad-group counts — the two differ because advertisers contribute unequal numbers of hourly paid, non-zero-ROAS observations):
-
-```
-=== Cluster sizes (unique ad_group_id) ===
-cluster
-0    39
-1    41
-2    13
-Name: count, dtype: int64
-```
+**Cluster sizes:**
 
 | Cluster | Unique ad groups | Row-level n |
 |---|---|---|
@@ -315,15 +482,7 @@ Name: count, dtype: int64
 | 1 | 41 | 217 |
 | 2 | 13 | 28 |
 
-**Gini coefficients by cluster and method:**
-
-| Cluster (n) | Ind.SHAP G0 | Ind.SHAP G1 | Perm.SHAP G0 | Perm.SHAP G1 | IG G0 | IG G1 |
-|---|---|---|---|---|---|---|
-| Cluster 0 (n=1,214) | 0.368194 | 0.648485 | 0.425272 | 0.681121 | 0.129057 | 0.242154 |
-| Cluster 1 (n=217) | 0.365977 | 0.543975 | 0.333969 | 0.594746 | 0.099013 | 0.269950 |
-| Cluster 2 (n=28) | 0.317709 | 0.429084 | 0.286485 | 0.451455 | 0.091972 | 0.392960 |
-
-**Kruskal-Wallis across clusters (Group 0 attribution magnitude), computed once per method:**
+**Kruskal-Wallis across clusters (Group 0 attribution magnitude), one test per method:**
 
 ```
 IndividualSHAP        H = 72.213   p = 0.0000
@@ -331,116 +490,108 @@ PermutationSHAP       H = 143.831   p = 0.0000
 IntegratedGradients   H = 18.277   p = 0.0001
 ```
 
-All three independently computed methods agree that Group 0 attribution differs significantly across ad-group clusters — this is the cross-method convergence this design is built to test directly rather than assume.
+**H5: supported.** All three independently computed methods agree that Group 0
+(engagement/spend) attribution differs significantly across ad-group clusters.
+Cross-method Spearman rank correlation ranges ρ = 0.607–0.964 across clusters
+(test n = 7 features per cluster); Group 1 (temporal) attribution is consistently more
+concentrated than Group 0 attribution across every method and every cluster.
 
-**H5: supported.** Not only does Individual SHAP reject the null of equal attribution across clusters, but two independently computed corroborating methods (Permutation SHAP, Integrated Gradients) reach the identical qualitative conclusion.
+### 5.8 R2 — Cross-campaign domain shift, adaptation, and the Shopping-only baseline
 
-**Cross-method Spearman rank correlation (feature-mean |attribution|, per cluster; test n = 7 features per cluster, see §4.4/Table 9 note):**
-
-```
--- Cluster 0 (n=1214) --
-   IndividualSHAP vs PermutationSHAP: rho = 0.857  (p = 0.0137)
-   IndividualSHAP vs IntegratedGradients: rho = 0.607  (p = 0.1482)
-   PermutationSHAP vs IntegratedGradients: rho = 0.821  (p = 0.0234)
--- Cluster 1 (n=217) --
-   IndividualSHAP vs PermutationSHAP: rho = 0.964  (p = 0.0005)
-   IndividualSHAP vs IntegratedGradients: rho = 0.714  (p = 0.0713)
-   PermutationSHAP vs IntegratedGradients: rho = 0.821  (p = 0.0234)
--- Cluster 2 (n=28) --
-   IndividualSHAP vs PermutationSHAP: rho = 0.964  (p = 0.0005)
-   IndividualSHAP vs IntegratedGradients: rho = 0.821  (p = 0.0234)
-   PermutationSHAP vs IntegratedGradients: rho = 0.893  (p = 0.0068)
-```
-
-The two Shapley-family methods (Individual SHAP, Permutation SHAP) agree strongly and consistently across all three clusters (ρ = 0.857–0.964), an internal consistency check on the Shapley estimation itself, since both estimate the same underlying game-theoretic quantity via different sampling procedures. Agreement between the Shapley-family methods and the gradient-based Integrated Gradients is more variable — weaker in Cluster 0 (ρ = 0.607–0.821) and stronger in Clusters 1 and 2 (ρ = 0.714–0.893) — which is substantively informative rather than merely a precision artifact: Shapley-based and gradient-based methods rest on different formal definitions of feature importance (cooperative-game marginal contribution vs. integrated local gradient), so partial convergence between method families is the expected pattern. The more decision-relevant convergence result is that all three methods agree on *which feature category dominates*: Group 1 (temporal) attribution is consistently more concentrated than Group 0 (engagement) attribution across every method and every cluster (see Gini table above).
-
-> **Note on the Spearman test's own sample size.** The Kruskal-Wallis and Gini statistics above are computed on each cluster's row-level sample (n = 1,214 / 217 / 28). The Spearman correlations are computed differently: for each cluster, the three methods' cluster-mean absolute attribution is first collapsed to one value per feature (seven features total), and the correlation is computed across those seven feature-level values — so the correlation test's own n is 7 in every cluster, regardless of row-level cluster size. This is why, for example, ρ = 0.607 in Cluster 0 carries p = .1482 despite Cluster 0 having 1,214 row-level observations: the correlation test itself only ever has 7 data points.
-
-This individual-level, cross-verified design directly answers the concern that originally motivated joint group-level attribution — that dependent features could be misleadingly attributed in isolation — by showing empirically, rather than assuming procedurally, that three independently computed methods converge on the same substantive conclusion at this feature dimensionality. As before, the leave-one-advertiser-out check (§5.8) remains the primary source of generalization evidence for the predictive pipeline that this explainability analysis interprets.
-
-### 5.7 R2 — Robustness check: Cross-campaign domain shift and adaptation
-
-Two-sample Kolmogorov–Smirnov tests, Search vs. Shopping:
-
-<p align="center"><img src="assets/fig5_ks_domain_shift.png" width="680" alt="KS-test domain shift by feature"></p>
-
-| Feature | KS statistic | Significant? |
-|---|---|---|
-| Depth | 0.3749 | Yes |
-| log_cost | 0.2271 | Yes |
-| CTR | 0.2200 | Yes |
-| log_impression | 0.1310 | Yes |
-| hour_sin | 0.0940 | Yes |
-| CVR | 0.0383 | Yes |
-| hour_cos | 0.0296 (p = .068) | No |
-
-**R2 finding:** 6 of 7 features differ significantly between campaign types, confirming at the distributional level the same heterogeneity H3 established at the outcome level.
+Two-sample Kolmogorov–Smirnov tests, Search vs. Shopping: 6 of 7 features differ
+significantly (all but `hour_cos`, p=.068).
 
 **Domain adaptation (Search → Shopping, frozen-encoder fine-tuning):**
 
-| Transfer setup | RMSE | Gain vs. naive |
+| Transfer setup | RMSE |
+|---|---|
+| Naive transfer | 1.3176–1.3169 (single-seed / three-seed mean) |
+| Adapted transfer (50% frozen) | 1.3128–1.3114 |
+
+**v7.0 addition — Shopping-only baseline.** A model trained and evaluated entirely
+within Shopping-campaign sequences (never exposed to Search) achieves RMSE ≈ 1.3115,
+essentially matching the adapted-transfer RMSE. Decomposing the naive-transfer error:
+
+| Quantity | Value | Interpretation |
 |---|---|---|
-| Naive transfer | 1.3176 | — |
-| Adapted transfer (50% frozen) | 1.3128 | **+0.4%** |
+| Domain-shift recoverable gap (naive − Shopping-only) | 0.0048 | total error attributable to being trained on the wrong domain at all |
+| Adaptation-captured gap (naive − adapted) | 0.0050 | how much of that gap the fine-tuning recipe recovers |
+| Adaptation-capture ratio | ~1.06 | the recipe recovers essentially all of the (small) recoverable gap |
 
-The gain is modest; the contribution of this analysis is the empirical motivation the KS results provide for domain-adaptive design generally, not a claim that this specific recipe delivers a large gain.
+**Reading:** the KS-test evidence for distributional shift between Search and Shopping
+features is real, but that shift carries very little exploitable forecasting cost for
+this architecture and task — most of the naive-transfer RMSE reflects Shopping's
+intrinsic forecasting difficulty, not a recoverable domain-shift cost the adaptation
+recipe is leaving on the table. Full detail: [`replication_extension/`](replication_extension/README.md#3-shopping-only-baseline-12_shopping_only_baselinepy).
 
-### 5.8 RQ6 — External-validity checks (leave-one-advertiser-out)
+### 5.9 RQ6 — External-validity checks (leave-one-advertiser-out)
 
-**Leave-one-advertiser-out cross-validation** executed across all **37 advertisers** in the panel, GRU forecaster (hidden=128, layers=2, dropout=0.2), all 37 real per-fold RMSE values retained:
-
-<p align="center"><img src="assets/fig9_loao_cv.png" width="820" alt="LOAO-CV, 37 real fold RMSE values"></p>
-<p align="center"><em>Figure 4. Leave-one-advertiser-out cross-validation, 37 real per-fold RMSE values (v6.1, regenerated — terminology unified to "LOAO-CV" / "37 advertisers," stale internal cross-reference annotations to superseded README values removed).</em></p>
+Leave-one-advertiser-out cross-validation across all **37 advertisers**, GRU forecaster
+(hidden=128, layers=2, dropout=0.2) — GRU is designated a priori as SADAF's
+infrastructure-level reference architecture for pipeline diagnostics repeated across
+many folds, independent of the separate architecture-accuracy comparison in §5.4:
 
 | Quantity | Value |
 |---|---|
 | Mean RMSE | **1.2268** |
 | SD | **0.5789** |
 | n folds | 37 (one fold per advertiser) |
-| Min / Max | 0.260 / 3.084 |
-| SE (SD/√37) | 0.0952 |
-| **95% CI of mean RMSE** | **[1.040, 1.413]** |
+| 95% CI of mean RMSE | **[1.040, 1.413]** |
 
-The mean RMSE is numerically close to the single group-split LSTM test RMSE of 1.2099 (§5.4) and falls within this CI. Because the LOAO-CV forecaster (GRU) and the headline regression-stage winner (LSTM) are different architectures, this proximity is *suggestive* that RMSE in the 1.2–1.3 range is a stable property of this task across reasonable recurrent architectures — it is not a replication of the LSTM result under resampling. The primary evidentiary contribution of RQ6 is the precision estimate itself (95% CI = [1.040, 1.413]) for cross-advertiser generalization within scope. Because **each fold now withholds an entire advertiser** rather than a subset of hours from a shared advertiser pool, this check specifically demonstrates that the predictive pipeline generalizes to advertisers the model has never seen — a materially stronger form of generalization evidence than within-advertiser, held-out-time-period validation would provide.
+A supplementary regularization grid search (GRU, dropout × weight decay) finds a best
+configuration (dropout=0.2, weight_decay=1×10⁻⁴, RMSE=1.4073).
 
-A supplementary regularization grid search (GRU, dropout × weight decay) finds a best configuration (dropout = 0.2, weight_decay = 1×10⁻⁴, RMSE = 1.4073) — a robustness reference point, not directly comparable to the headline LSTM result (different architecture, different sweep).
-
-These checks support cross-advertiser generalization **within** this single-market, single-month, single-agency-provenance scope only.
-
-### 5.9 Statistical Power and Precision
-
-Sample sizes range from the thousands (causal pillar, pooled across 37 advertisers) to n = 24 test sequences (H4a–c) and row-level cluster sizes of 28–1,214 (H5). This section summarizes what each can and cannot support.
-
-<p align="center"><img src="assets/fig10_power_summary.png" width="820" alt="Statistical power by hypothesis and diagnostic test"></p>
-<p align="center"><em>Figure 5. Statistical power by hypothesis and diagnostic test (v6.1, regenerated — H5 now shows three separate row-level Kruskal-Wallis bars matching Table 12, replacing the single pre-redesign n=24 bar; Spearman row corrected to the Table 12 entry).</em></p>
+### 5.10 Statistical Power and Precision
 
 | Test | n | Effect | Power (or MDE) | Type |
 |---|---|---|---|---|
 | H1 Causal ATT (PSM + DR-IPW) | 14,987 | ATT = 0.129 | Power > .99 | A priori |
 | H3 Moderated OLS interaction | 9,069 | β = 0.386 | Power > .99 | A priori |
-| H4b DM pairwise mean (18 computable) | 24 | Mean \|dz\| = 0.50 | Power = .64 (raw) / .24 (FDR) | Post-hoc — interpret with caution |
 | H4b DM pairwise MDE (80% power) | 24 | — | dz = 0.60 (raw) / 0.88 (FDR) | A priori (MDE) |
 | H5 Kruskal–Wallis, Individual SHAP (G0) | 1,459 (3 clusters) | H = 72.21, p<.0001 | Power > .99 | Post-hoc |
-| H5 Kruskal–Wallis, Permutation SHAP (G0) | 1,459 (3 clusters) | H = 143.83, p<.0001 | Power > .99 | Post-hoc |
 | H5 Kruskal–Wallis, Integrated Gradients (G0) | 1,459 (3 clusters) | H = 18.28, p=.0001 | Power = .93 | Post-hoc |
-| H5 Spearman, weakest pair (Cluster 0, n=1,214 row-level; test n=7 features) | 7 | ρ = 0.607 (Ind.SHAP vs IG) | Power = .59 | Post-hoc — interpret with caution |
-| RQ6 LOAO-CV mean RMSE | 37 folds | RMSE = 1.227 ± 0.579 | 95% CI half-width = 0.187 (15.3% of mean) | A priori (Precision) |
+| H5 Spearman, weakest pair | 7 | ρ = 0.607 | Power = .59 | Post-hoc — interpret with caution |
+| RQ6 LOAO-CV mean RMSE | 37 folds | RMSE = 1.227 ± 0.579 | 95% CI half-width = 0.187 (15.3%) | A priori (Precision) |
 
-**Reading rule used throughout this README:** the causal pillar (H1, H3) and the LOAO-CV precision check (RQ6) rest on genuinely high a priori power and are the paper's best-powered, independent evidence. H4b and H4c draw on the same n = 24 test sequences, so they are read as multiple analytical lenses on one shared evidentiary base rather than as independent confirmations. **H5, by moving from a sequence-level, cluster-of-7-to-9 design to the row-level sample (n = 1,214 / 217 / 28), now carries materially more power than the original group-level design** — two of the three Kruskal-Wallis tests exceed 0.99 power, and even the weakest (Integrated Gradients) reaches .93. Post-hoc power figures are not treated as independently corroborating evidence, since they are a deterministic function of the same p-values already reported.
+The causal pillar (H1, H3) and the LOAO-CV precision check (RQ6) rest on genuinely high
+a priori power. H4b/R3 draw on the same n=24 test sequences, so they are read as
+multiple analytical lenses on one shared evidentiary base — this is precisely why the
+v7.0 five-seed replication matters: at n=24, a single split's ranking is not, on its
+own, adequately powered evidence of which architecture is genuinely best.
 
 ---
 
 ## 6. Discussion
 
-Read together, the pattern of support across H1–H5, R1–R2, and RQ6 sketches a boundary-condition picture — for a **37-advertiser panel's** activity across Korea's Naver-and-Kakao search-advertising ecosystem — that partially agrees with, and partially and informatively departs from, patterns established in Google-dominated markets:
+Read together, the pattern of support across H1–H5, R1–R3, and RQ6 sketches a
+boundary-condition picture that partially agrees with, and partially and informatively
+departs from, patterns established in Google-dominated markets:
 
-- **Where it agrees, with high power:** CTR causally drives conversion (H1) and the CTR→ROAS relationship is stronger for Search than Shopping traffic (H3), both estimated at n in the thousands (pooled across all 37 advertisers) with power > .99 — a genuine, design-level property, not an artifact of the observed effect sizes.
-- **Where it complicates the standard account, at smaller sample sizes:** browsing depth behaves as a negative suppressor rather than the positive mediator H2 anticipated — reported as a departure from, not confirmation of, H2's original mechanism. A parsimonious logistic classifier also outperforms every recurrent architecture on the antecedent classification task (H4a): at this sample size, added representational capacity is actively detrimental, not merely unnecessary.
-- **Where scarcity itself is the finding:** the two-stage design exists because 174 real training sequences cannot fit a deep sequence model directly. The epoch-consistent domain-gap diagnostic (H4c) identifies Mamba — not Bayesian LSTM — as the architecture showing the classical overfitting signature, despite its comparatively weak raw accuracy; Bayesian LSTM's large train-above-validation gap is more plausibly MC-dropout inflating training loss than genuine overfitting.
-- **On the explainability pillar specifically:** moving from a joint group-level estimator to three independently computed, individual-level methods produced a more, not less, informative result. Rather than a single test whose interpretability at seven features was itself contested, the analysis reports three methodologically distinct tests that independently converge on the same qualitative conclusion — engagement/spend attribution differs across ad-group clusters, and temporal attribution is consistently more concentrated than engagement attribution, across every method and every cluster. Where the methods partially diverge (Shapley-family vs. Integrated Gradients, Cluster 0), that divergence is itself informative about which formal definition of feature importance is driving a given conclusion — a distinction a single joint estimator would have obscured by construction.
-- **On RQ6:** the LOAO-CV forecaster (GRU) and the headline regression winner (LSTM) are different architectures, so their RMSE proximity (1.2268 vs. 1.2099) is suggestive of a stable task-level RMSE range, not a replication of the H4b result under resampling. Because each fold withholds an entire advertiser, RQ6 provides direct evidence of generalization to advertisers unseen during training — its primary contribution is this precision estimate (95% CI = [1.040, 1.413]).
+- **Where it agrees, with high power:** CTR causally drives conversion (H1) and the
+  CTR→ROAS relationship is stronger for Search than Shopping traffic (H3), both at
+  power > .99.
+- **Where it complicates the standard account:** browsing depth behaves as a negative
+  suppressor rather than the positive mediator H2 anticipated. A parsimonious logistic
+  classifier matches every recurrent architecture on the antecedent classification task
+  (H4a).
+- **Where a single split misled:** the original claim that LSTM is the single best
+  ROAS forecaster does not survive five-seed replication. Bayesian LSTM is the more
+  stable candidate, and the augmentation pipeline's demonstrated value is regularization
+  against overfitting, not general accuracy improvement — a materially different, and
+  more defensible, characterization of what SADAF's predictive pillar actually shows.
+- **On domain adaptation:** the Shopping-only baseline shows the adaptation recipe is
+  already close to the achievable floor; the modest naive-vs-adapted gain is real but
+  small because most of Shopping-campaign forecasting difficulty is intrinsic, not a
+  recoverable consequence of cross-campaign transfer.
+- **On RQ6:** the LOAO-CV forecaster (GRU) and the regression-stage comparison (§5.4)
+  use different architectures by design; their RMSE proximity (1.2268 vs. 1.2099) is
+  suggestive of a stable task-level RMSE range, not a replication of any single
+  architecture's ranking.
 
-None of this establishes that Korean, domestically dominated, or multi-platform-but-non-Google-dominated markets behave categorically differently from Google-dominated ones — the sample is a 37-advertiser panel, one month, one agency-standardized platform (Naver + Kakao), by explicit design. What it establishes is that the causal pillar's findings (H1, H3) rest on genuinely high a priori power, the LOAO-CV precision check (RQ6) provides an independent, reasonably tight confirmation of cross-advertiser generalization within scope, the explainability pillar (H5) now rests on a considerably larger and independently cross-verified evidentiary base than a single joint estimator would have provided, and the remaining sequence-level findings (H2, H4a, H4b, H4c) — evaluated at n = 24 and substantially overlapping in evidentiary base — are reported with the descriptive and scope-limited status their design warrants.
+None of this establishes that Korean, domestically dominated, or multi-platform-but-
+non-Google-dominated markets behave categorically differently from Google-dominated
+ones — the sample is a 37-advertiser panel, one month, one agency-standardized
+platform, by explicit design.
 
 ---
 
@@ -448,16 +599,14 @@ None of this establishes that Korean, domestically dominated, or multi-platform-
 
 | Item | Detail | Status |
 |---|---|---|
-| **37-advertiser panel, single month** | Every result in §5 is conditional on this 37-advertiser panel's March 2025 data. RQ6 tests generalization *within* this scope only. | Explicit scope boundary, not a defect |
-| **Single-advertiser framing** | Earlier drafts described "a single advertiser's" campaigns, with n=24/37 read as ad groups within one account. | **Resolved in v6.0** — corrected throughout to a 37-advertiser panel; causal-pillar samples (H1, H3) confirmed pooled across all 37. |
-| **Naver-only platform framing** | Earlier drafts framed market share and campaign composition as "Naver vs. Google" only. | **Resolved in v6.0** — reframed as "Korea (Naver + Kakao) vs. Google," consistent with the dataset's actual cross-platform composition via SearchM. |
-| **GS-SHAP (group-level Shapley)** | Earlier drafts computed attribution jointly over two HSIC-defined feature groups, a design whose complexity is not conventionally warranted at 7-feature dimensionality. | **Resolved in v6.0** — replaced with individual-level, cross-verified attribution (Individual SHAP, Permutation SHAP, Integrated Gradients); §5.6 fully rewritten with actual recomputed results. |
-| **H2 mechanism mislabel** | Previously reported as "supported" in a way that implied the hypothesized *mediation* mechanism was confirmed. | Resolved (carried over from v5.3) — §5.2 verdict and explanation reflect suppression, not mediation. |
-| **Figures out of sync with v6.0 text (Figs. 1, 3, 9, 10)** | Fig. 1's caption still said "this advertiser"; Fig. 3's explainability box still showed pre-redesign sequence-level H5 stats (n=7/8/9, ρ=.56–.83); Fig. 9 used stale "LOGO-CV"/"37 ad groups" wording and cross-referenced a superseded README value; Fig. 10 still reported the single, pre-redesign, underpowered H5 test the redesign was meant to fix. | **Resolved in v6.1** — all four regenerated from corrected numbers/terminology; see version-note table above. |
-| **Table 12 vs. §6.7/§6.10 cluster-label mismatch for ρ=0.607** | Table 12 attributes the weakest Spearman pair to "Cluster 2 (n=28)"; §6.7/§6.10 narrative attributes the same value to "Cluster 0 (n=1,214)." | **Open** — flagged during Fig. 10 regeneration; four before/after text edits are drafted (Table 12 row, §6.10 paragraph, Table 9 footnote, Figure 7 caption) but not yet applied to the manuscript. |
-| **FSD seed coverage** | The Gaussian-copula and moving-block-bootstrap augmentation modules do not accept an explicit `seed` parameter, so FSD is not exactly bit-for-bit reproducible across runs (though it consistently passes the <2.0 threshold). | Open — recommended follow-up |
-| **Underpowered H5 Spearman correlations in small clusters** | Cross-method agreement in Cluster 2 (n=28 row-level observations, 13 advertisers) is more variable than in the two larger clusters. | Reported explicitly in §5.6 and §5.9; treated as directional, not decisive |
-| **Agency-managed data provenance** | Dataset sourced through SearchM Co., Ltd. rather than advertisers' in-house teams; standardizes conventions across Naver and Kakao but may not generalize to in-house-managed or single-platform data. | Explicit scope condition |
+| **Single-split H4b claim** | Earlier versions reported LSTM as the outright best forecaster from a single Seed-42 split. | **Resolved in v7.0** — five-seed replication added; claim revised to "recurrent architectures beat linear/feed-forward baselines; Bayesian LSTM is the most stable single candidate." |
+| **Augmentation pipeline's role unverified** | Earlier versions treated the FSD quality-gate pass as evidence the augmentation pipeline was helping accuracy. | **Resolved in v7.0** — real-only ablation shows augmentation's demonstrated benefit is regularization (MLP specifically), not general accuracy improvement. |
+| **H4c framing as a directional hypothesis** | Reviewers flagged the original H4c wording as reverse-engineered from the observed result. | **Resolved in v7.0** — reclassified as R3, a descriptive diagnostic. |
+| **No Shopping-only baseline for domain adaptation** | The naive-vs-adapted RMSE range could not be decomposed into genuine domain-shift cost vs. intrinsic Shopping difficulty. | **Resolved in v7.0** — Shopping-only baseline added; decomposition reported in §5.8. |
+| **Augmentation seed coverage** | The Gaussian-copula and moving-block-bootstrap modules do not accept an explicit `seed` parameter, so the five-seed replication confounds model-initialization variance with synthetic-draw variance. | **Open** — flagged as the top item in the replication agenda; a seed-controllable augmentation pipeline is a direct next step. |
+| **Five seeds is itself a small panel** | The Wilcoxon tests comparing real-only vs. augmented RMSE are underpowered by design (minimum attainable two-sided p = .0625 at n=5). | **Open, disclosed** — a 20–30-seed replication is the recommended extension. |
+| **4-hour vs. 6-hour base sequence length** | The choice of SEQ_LEN=4 as the base window (vs. 6, used only for R1) does not have an explicit a priori justification beyond the R1 robustness framing. | **Open** |
+| **Underpowered H5 Spearman correlations in small clusters** | Cross-method agreement in Cluster 2 (n=28 row-level observations) is more variable than in the two larger clusters. | Reported explicitly; treated as directional, not decisive. |
 
 ---
 
@@ -466,79 +615,52 @@ None of this establishes that Korean, domestically dominated, or multi-platform-
 ```
 sadaf/
 ├── assets/
-│   ├── fig3_framework_architecture.png            # Figure 1 (v6.1, regenerated) — framework architecture, corrected H5 box
-│   ├── fig1_market_context.png                    # Figure 2 (v6.1, regenerated) — campaign mix & spend concentration, corrected caption
-│   ├── fig1_regression_comparison.png
-│   ├── fig3_dm_heatmap.png
-│   ├── fig5_ks_domain_shift.png
-│   ├── fig6_domain_gap_corrected.png               # epoch-consistent domain gap (H4c)
-│   ├── fig7_individual_attribution_verification.png  # Figure 3 (v6.0) — replaces old GS-SHAP fig4_gsshap_gini.png
-│   ├── fig9_loao_cv.png                            # Figure 4 (v6.1, regenerated) — LOAO-CV, terminology + stale annotations fixed
-│   └── fig10_power_summary.png                     # Figure 5 (v6.1, regenerated) — row-level H5 power, matches Table 12
+│   ├── fig3_framework_architecture.png            # Figure 1 (v7.0) — updated H4b framing (△ not ✓)
+│   ├── fig4_regression_fiveseed.png                # Figure 2 (v7.0, NEW) — five-seed RMSE distribution
+│   └── fig5_dm_heatmap.png                         # Figure (v7.0, NEW) — full 21-pair DM heatmap
+├── replication_extension/                          # v7.0 — NEW self-contained analysis folder
+│   ├── README.md                                   # full write-up of all three new analyses
+│   ├── scripts/
+│   │   ├── 10_multiseed_stability.py                # five-seed replication of Table 7
+│   │   ├── 11_augmentation_ablation.py               # real-only vs. augmented ablation
+│   │   ├── 12_shopping_only_baseline.py              # Shopping-only forecaster baseline
+│   │   ├── fig3_framework_architecture.py
+│   │   ├── fig4_regression_fiveseed.py
+│   │   └── fig5_dm_heatmap.py
+│   ├── logs/
+│   │   ├── 10_multiseed_stability.log
+│   │   ├── 11_augmentation_ablation.log
+│   │   └── 12_shopping_only_baseline.log
+│   └── figures/                                     # derived CSVs + copies of the two new figures
 ├── data/
 │   └── README_data.md
 ├── docs/
 │   ├── methodology.md
 │   └── results_table.md
-├── figures/                                        # Auto-generated pipeline outputs
-│   ├── logo_cv_fold_rmse.csv                       # 37-row per-advertiser LOAO-CV RMSE, source data for Figure 4
-│   ├── cluster_sizes.csv                            # Table 9 (unique ad-group / row-level n by cluster)
-│   ├── gini_by_cluster_method.csv                   # Table 10 (Gini by cluster/method/group)
-│   ├── kruskal_wallis_group0.csv                    # H5 Kruskal-Wallis by method
-│   └── spearman_agreement.csv                       # cross-method Spearman by cluster
-├── patches/
-│   ├── fig3_framework_architecture.py               # regenerates Figure 1 (v6.1 — corrected H5 box)
-│   ├── fig1_market_context.py                       # regenerates Figure 2 (v6.1 — corrected caption)
-│   ├── fig9_loao_cv.py                              # regenerates Figure 4 (v6.1 — corrected terminology/annotations)
-│   ├── fig10_power_summary.py                       # regenerates Figure 5 (v6.1 — row-level H5 power rows)
-│   ├── make_fig7_individual_attribution.py          # regenerates Figure 3 from the 4 CSVs above
-│   ├── trainer_domain_gap_report_PATCH.py           # epoch-consistent domain_gap_report()
-│   └── loao_cv_save_patch.py                        # persist per-advertiser LOAO-CV RMSE
-├── readme/
-│   └── README_v5_full.md                            # captured pipeline stdout under the pre-redesign (GS-SHAP) pipeline
+├── figures/                                         # Auto-generated pipeline outputs (unchanged from v6.1)
+│   ├── logo_cv_fold_rmse.csv
+│   ├── cluster_sizes.csv
+│   ├── gini_by_cluster_method.csv
+│   ├── kruskal_wallis_group0.csv
+│   └── spearman_agreement.csv
 ├── sadaf/
-│   ├── augmentation/
-│   │   ├── copula.py                                # no explicit seed param yet (see §7)
-│   │   ├── mbb.py                                   # no explicit seed param yet (see §7)
-│   │   ├── pipeline.py
-│   │   └── vae.py
+│   ├── augmentation/                                # unmodified; seed-parameter gap noted in §7
 │   ├── causal/
-│   │   ├── mediation.py                             # run_mediation()
-│   │   ├── moderation.py                            # run_moderation()
-│   │   └── psm.py                                   # run_psm_ipw()
 │   ├── data/
-│   │   ├── loader.py
-│   │   └── sequence.py
 │   ├── explainability/
-│   │   └── individual_attribution.py                # replaces gsshap.py; Individual SHAP + Permutation SHAP + Integrated Gradients
 │   ├── models/
-│   │   ├── attention.py
-│   │   ├── gru.py                                   # exact architecture used for LOAO-CV, hidden=128/layers=2/dropout=0.2
-│   │   ├── lstm.py
-│   │   ├── mamba.py
-│   │   └── protonet.py
 │   ├── training/
-│   │   └── trainer.py                               # train_model, eval_reg, diebold_mariano, domain_gap_report()
+│   │   └── trainer.py                               # unmodified; domain_gap_report() used by R3
 │   └── config.py
 ├── scripts/
-│   ├── 01_eda.py
-│   ├── 02_zinb.py
-│   ├── 03_causal.py
-│   ├── 04_augmentation.py
-│   ├── 05_prediction.py
-│   ├── 06_uncertainty.py
-│   ├── 07_explainability.py                         # calls sadaf/explainability/individual_attribution.py
-│   ├── 08_domain_adaptation.py
-│   ├── 09_robustness.py                             # leave-one-advertiser-out (was leave-one-ad-group-out)
+│   ├── 01_eda.py … 07_explainability.py              # unchanged from v6.1
+│   ├── 08_domain_adaptation.py                       # unchanged; now paired with 12_shopping_only_baseline.py
+│   ├── 09_robustness.py                              # unchanged; LOAO-CV (RQ6), regularization grid, DM correction
 │   └── 10_figures.py
-├── tests/
 ├── LICENSE
-├── README.md                                        # This file
+├── README.md                                         # This file
 └── requirements.txt
 ```
-
-> **Removed in v6.0:** `sadaf/explainability/gsshap.py` (group-level, HSIC-grouped Shapley estimator) and `assets/fig4_gsshap_gini.png`. If your local checkout still references either, update to `individual_attribution.py` and `fig7_individual_attribution_verification.png` respectively.
-> **Renamed/regenerated in v6.1:** `assets/sadaf_framework_architecture_v4.png` → `assets/fig3_framework_architecture.png`; `assets/fig6_market_context.png` → `assets/fig1_market_context.png`; `assets/fig9_loao_cv_real.png` → `assets/fig9_loao_cv.png`. `docs/results_table.md` and any file restating H5's method or verdict should be re-synced to this README.
 
 ---
 
@@ -552,7 +674,7 @@ source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Full pipeline:
+Full pipeline (unchanged from v6.1):
 
 ```bash
 python scripts/01_eda.py                 --data_path data/ad_performance.xlsx
@@ -566,45 +688,81 @@ python -m sadaf.explainability.individual_attribution \
 python scripts/08_domain_adaptation.py
 python scripts/09_robustness.py          # leave-one-advertiser-out CV across 37 advertisers
 python scripts/10_figures.py
+```
 
-# Regenerate the four v6.1 figures individually (each writes to assets/):
-python patches/fig3_framework_architecture.py
-python patches/fig1_market_context.py
-python patches/fig9_loao_cv.py
-python patches/fig10_power_summary.py
-python patches/make_fig7_individual_attribution.py \
-    --gini figures/gini_by_cluster_method.csv \
-    --kw figures/kruskal_wallis_group0.csv \
-    --spearman figures/spearman_agreement.csv \
-    --out assets/fig7_individual_attribution_verification.png
+New in v7.0 — replication extension:
+
+```bash
+# Five-seed replication of the Table 7 regression comparison
+python replication_extension/scripts/10_multiseed_stability.py \
+    --data_path data/ad_performance.xlsx --seeds 42 1 7 123 2024
+
+# Real-only vs. augmented ablation
+python replication_extension/scripts/11_augmentation_ablation.py \
+    --data_path data/ad_performance.xlsx --seeds 42 1 7 123 2024
+
+# Shopping-only baseline / domain-shift decomposition
+python replication_extension/scripts/12_shopping_only_baseline.py \
+    --data_path data/ad_performance.xlsx --seeds 42 1 7
+
+# Regenerate the three v7.0 figures
+python replication_extension/scripts/fig3_framework_architecture.py
+python replication_extension/scripts/fig4_regression_fiveseed.py
+python replication_extension/scripts/fig5_dm_heatmap.py
 ```
 
 ---
 
 ## 10. Code Fix Log
 
-- **FIX-1 through FIX-25** (unchanged from v5.3): see git history for causal-pillar, augmentation-seed, and domain-gap corrections.
-- **FIX-26 (v6.0):** Removed `sadaf/explainability/gsshap.py`; added `sadaf/explainability/individual_attribution.py` computing Individual SHAP, Permutation SHAP, and Integrated Gradients on the identical model/data, with cross-method Kruskal-Wallis and Spearman verification.
-- **FIX-27 (v6.0):** `scripts/09_robustness.py` LOAO-CV loop changed from grouping by ad-group identifier within a single advertiser to grouping by advertiser identifier across the full 37-advertiser panel; `patches/loao_cv_save_patch.py` updated accordingly.
-- **FIX-28 (v6.0):** All narrative references to "single advertiser" and "Naver-only" corrected throughout README, docstrings, and figure captions to "37-advertiser panel" and "Naver and Kakao (via SearchM Co., Ltd.)," respectively. No pipeline numerical outputs changed as a result of this fix — it is a documentation/labeling correction, consistent with how the underlying data was always structured.
-- **FIX-29 (v6.1):** Regenerated `assets/fig1_market_context.png` — caption corrected from "this advertiser, March 2025" to "37-advertiser panel, March 2025"; underlying values unchanged (already panel-level aggregates).
-- **FIX-30 (v6.1):** Regenerated `assets/fig3_framework_architecture.png` — Explainability box updated from pre-redesign sequence-level stats (clusters n=7/8/9, ρ=.56–.83) to the corrected row-level design (clusters n=1,214/217/28, ρ=.607–.964, 3-method attribution), matching Table 9/10 and §6.7.
-- **FIX-31 (v6.1):** Regenerated `assets/fig9_loao_cv.png` — "LOGO-CV"/"37 ad groups" terminology corrected to "LOAO-CV"/"37 advertisers"; stale cross-reference annotations to a superseded internal README value ("1.2427," "0.6042") removed, leaving only the confirmed Table 11 values (mean=1.2268, SD=0.5789).
-- **FIX-32 (v6.1):** Regenerated `assets/fig10_power_summary.png` — replaced the single pre-redesign H5 bar (n=24, 3 clusters, power=.53) with three row-level Kruskal-Wallis bars matching Table 12 (n=1,459, power > .99/> .99/.93); Spearman bar corrected to Table 12's Cluster 2 (n=28) entry. A residual Table 12 vs. §6.7/§6.10 cluster-label discrepancy for this same ρ=0.607 value was surfaced in the process and is tracked in §7 as an open item, not silently resolved by the figure.
+- **FIX-1 through FIX-32** (unchanged from v6.1): see git history.
+- **FIX-33 (v7.0):** Added `replication_extension/scripts/10_multiseed_stability.py`
+  — five-seed replication of the Table 7 regression-stage comparison, reusing the
+  identical group-aware split across seeds; revises the H4b headline claim.
+- **FIX-34 (v7.0):** Added `replication_extension/scripts/11_augmentation_ablation.py`
+  — real-only-trained control condition for every architecture across the same five
+  seeds; reframes the augmentation pipeline's demonstrated contribution as
+  regularization rather than general accuracy improvement.
+- **FIX-35 (v7.0):** Added `replication_extension/scripts/12_shopping_only_baseline.py`
+  — Shopping-only forecaster baseline, decomposing the naive-vs-adapted domain-transfer
+  RMSE gap into a genuine domain-shift component and Shopping's intrinsic forecasting
+  difficulty.
+- **FIX-36 (v7.0):** Regenerated `assets/fig3_framework_architecture.png` — H4b marked
+  △ (informative departure, split-dependent) instead of ✓; R3 replaces the previous
+  H4c framing.
+- **FIX-37 (v7.0):** Added `assets/fig4_regression_fiveseed.png` (five-seed RMSE
+  distribution) and `assets/fig5_dm_heatmap.png` (full 21-pair Diebold–Mariano heatmap,
+  raw + BH-FDR), both new to this version.
+- **FIX-38 (v7.0):** H4c reclassified as R3 throughout the README and figures —
+  descriptive diagnostic rather than a directional, falsifiable hypothesis.
+- **FIX-39 (v7.0):** H2 (§5.2) extended with a second, probability-scale direct/total
+  effect decomposition (average marginal effects) alongside the original
+  coefficient-product decomposition.
+- **FIX-40 (v7.0):** H3 elasticity reporting (§5.3) reworded to avoid the aggregate
+  "68% more lift" framing; now reports the Search (0.949) and Shopping (0.563)
+  elasticities directly.
 
 ---
 
 ## 11. Data Availability
 
-The raw dataset consists of internal advertising-operations performance records maintained by SearchM Co., Ltd., an official Naver and Kakao advertising agency, covering the Search and Shopping campaigns of a 37-advertiser panel, and **cannot be publicly released** due to commercial confidentiality obligations. Data-sharing requests should be submitted via GitHub Issues (label: `data-request`), including institutional affiliation, research purpose, and confirmation of non-commercial use.
+The raw dataset consists of internal advertising-operations performance records
+maintained by SearchM Co., Ltd., covering the Search and Shopping campaigns of a
+37-advertiser panel, and **cannot be publicly released** due to commercial
+confidentiality obligations. Data-sharing requests should be submitted via GitHub
+Issues (label: `data-request`), including institutional affiliation, research purpose,
+and confirmation of non-commercial use.
 
-The 37-row `figures/logo_cv_fold_rmse.csv` (LOAO-CV source data) and the `figures/gini_by_cluster_method.csv` / `kruskal_wallis_group0.csv` / `spearman_agreement.csv` files (H5 source data) contain only anonymized advertiser/cluster identifiers and aggregate statistics — no raw performance rows.
+All CSV files under `figures/` and `replication_extension/figures/` contain only
+anonymized advertiser/cluster identifiers, per-seed model metrics, and aggregate
+statistics — no raw performance rows.
 
 ---
 
 ## 12. License and Acknowledgements
 
-MIT License — see [LICENSE](LICENSE). The license covers only the code and methodology; the underlying dataset is not covered.
+MIT License — see [LICENSE](LICENSE). The license covers only the code and
+methodology; the underlying dataset is not covered.
 
 **Selected references:**
 - Lundberg & Lee (2017). *A Unified Approach to Interpreting Model Predictions.* NeurIPS.
@@ -614,6 +772,7 @@ MIT License — see [LICENSE](LICENSE). The license covers only the code and met
 - Gal & Ghahramani (2016). *Dropout as a Bayesian Approximation.* ICML.
 - Gu & Dao (2023). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces.* arXiv.
 - Zhao, Lynch & Chen (2010). *Reconsidering Baron and Kenny: Myths and Truths About Mediation Analysis.* JCR.
+- Desai, Freeman, Wang & Beaver (2021). *TimeVAE: A Variational Auto-Encoder for Multivariate Time Series Generation.* arXiv.
 - Cohen (1988). *Statistical Power Analysis for the Behavioral Sciences.*
 - Faul, Erdfelder, Lang & Buchner (2007). *G\*Power 3.* Behavior Research Methods.
-- BusinessKorea (Apr. 2026). *Naver's Search Market Share Hits 64% While Google Ranked 2nd with 29% Share* (InternetTrend data).
+- Hoenig & Heisey (2001). *The Abuse of Power: The Pervasive Fallacy of Power Calculations for Data Analysis.* The American Statistician.
