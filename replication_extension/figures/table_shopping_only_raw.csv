@@ -1,0 +1,4 @@
+seed,naive_RMSE,adapted_RMSE,shopping_only_RMSE,domain_shift_recoverable_gap,adaptation_captured_gap
+42,1.3169,1.3110,1.3101,0.0068,0.0059
+1,1.3181,1.3115,1.3125,0.0056,0.0066
+7,1.3140,1.3115,1.3118,0.0022,0.0025

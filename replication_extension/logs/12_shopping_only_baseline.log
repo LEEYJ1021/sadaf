@@ -1,0 +1,74 @@
+── Dataset summary ──────────────────────────────────────
+  Total rows    :   89,675
+  Paid rows     :   32,494
+  ROAS > 0      :    9,071  (27.9% of paid)
+  Conversion %  : 11.77%
+  Zero-ROAS %   : 72.1%
+─────────────────────────────────────────────────────────
+  Shopping: (4247, 4, 7)  Search: (3476, 4, 7)
+  Shopping split — train:2972  val:637  test:638  (shared across all three conditions, all seeds)
+
+══ Seed 42 ══════════════════════════════════
+    [1/3] Training source model on Search (naive transfer)...
+      NAIVE RMSE = 1.3169
+    [2/3] Fine-tuning on Shopping (50% frozen)...
+      ADAPTED RMSE = 1.3110
+    [3/3] Training Shopping-only baseline (no Search exposure)...
+      SHOPPING-ONLY RMSE = 1.3101
+
+══ Seed 1 ══════════════════════════════════
+    [1/3] Training source model on Search (naive transfer)...
+      NAIVE RMSE = 1.3181
+    [2/3] Fine-tuning on Shopping (50% frozen)...
+      ADAPTED RMSE = 1.3115
+    [3/3] Training Shopping-only baseline (no Search exposure)...
+      SHOPPING-ONLY RMSE = 1.3125
+
+══ Seed 7 ══════════════════════════════════
+    [1/3] Training source model on Search (naive transfer)...
+      NAIVE RMSE = 1.3140
+    [2/3] Fine-tuning on Shopping (50% frozen)...
+      ADAPTED RMSE = 1.3115
+    [3/3] Training Shopping-only baseline (no Search exposure)...
+      SHOPPING-ONLY RMSE = 1.3118
+
+Saved per-seed raw results → table_shopping_only_raw.csv
+Saved DM comparisons → table_shopping_only_raw_dm.csv
+
+══ Shopping-only baseline: decomposition summary ═══
+                                mean     std
+naive_RMSE                    1.3163  0.0021
+adapted_RMSE                  1.3114  0.0003
+shopping_only_RMSE            1.3115  0.0012
+domain_shift_recoverable_gap  0.0048  0.0024
+adaptation_captured_gap       0.0050  0.0022
+adaptation_capture_ratio      1.0607  0.1703
+
+  Reading guide:
+    domain_shift_recoverable_gap = naive_RMSE - shopping_only_RMSE
+      → total error attributable to being trained on the wrong
+        domain at all (large positive = genuine domain shift cost).
+    adaptation_captured_gap = naive_RMSE - adapted_RMSE
+      → how much of that gap the paper's fine-tuning recipe
+        actually recovers.
+    adaptation_capture_ratio = adaptation_captured_gap / domain_shift_recoverable_gap
+      → fraction of the recoverable domain-shift gap captured
+        by adaptation; near 1.0 = adaptation recovers nearly all
+        of it; near 0 = adaptation recovers almost none of it;
+        shopping_only_RMSE remains the floor neither naive nor
+        adapted can beat without in-domain Shopping training data.
+
+  Pairwise Diebold-Mariano tests (FDR-corrected across all seed x comparison pairs):
+              comparison  seed      dm      p   p_bh
+adapted_vs_shopping_only     1 -0.8684 0.3855 0.4957
+adapted_vs_shopping_only     7 -0.2472 0.8048 0.8048
+adapted_vs_shopping_only    42  0.4777 0.6330 0.7121
+        naive_vs_adapted     1  3.9763 0.0001 0.0005
+        naive_vs_adapted     7  3.1929 0.0015 0.0033
+        naive_vs_adapted    42  3.8719 0.0001 0.0005
+  naive_vs_shopping_only     1  3.3352 0.0009 0.0027
+  naive_vs_shopping_only     7  1.3504 0.1774 0.2660
+  naive_vs_shopping_only    42  2.6965 0.0072 0.0129
+Saved summary → table_shopping_only_raw_summary.csv
+
+✅ Shopping-only baseline / domain-shift decomposition complete.

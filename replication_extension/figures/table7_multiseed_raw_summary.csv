@@ -1,0 +1,8 @@
+architecture,mean_RMSE,sd_RMSE,n_seeds,pct_rank1
+BayesianLSTM,1.3604,0.0240,5,40.0
+GRU,1.4080,0.0873,5,20.0
+BiLSTM,1.4577,0.1661,5,20.0
+LSTM,1.4821,0.1631,5,20.0
+Ridge,1.6033,0.0000,5,0.0
+Mamba,1.6254,0.1530,5,0.0
+MLP,1.8284,0.2328,5,0.0

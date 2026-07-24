@@ -1,0 +1,7 @@
+quantity,mean,std
+naive_RMSE,1.3163,0.0021
+adapted_RMSE,1.3114,0.0003
+shopping_only_RMSE,1.3115,0.0012
+domain_shift_recoverable_gap,0.0048,0.0024
+adaptation_captured_gap,0.0050,0.0022
+adaptation_capture_ratio,1.0607,0.1703
